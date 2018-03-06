@@ -1,0 +1,77 @@
+.tags {
+  width: 100%;
+  border: 1px solid #ccc;
+  overflow: hidden;
+}
+
+.tags > div { overflow: hidden; }
+
+.tags input {
+  width: 100%;
+  margin: 0;
+  border: none;
+  outline: none;
+  display: inline-block;
+  font-size: 1rem;
+}
+
+ul.selected {
+  float: left;
+  margin: 0;
+  padding: 0.3rem 0 0 0.75rem;
+  display: inline-block;
+}
+
+ul.selected li {
+  display: inline-block;
+  margin: 0 2px;
+  padding: 0 6px;
+  color: white;
+  font-size: 1rem;
+  background-color: rgb(19,154,233);
+  border-radius: 3px;
+}
+
+ul.selected li:hover {
+  cursor: pointer;
+  background-color: rgb(185,214,251);
+}
+
+ul.selected li:hover:after {
+  /*content: '⎮×';*/
+}
+
+/*****************************************************************************/
+
+ul.suggested {
+  display: block;
+  margin: 0;
+  padding: 3px;
+  width: 90%; /* ??? */
+  max-height: 200px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  position: absolute;
+  z-index: 10;
+  border: 1px solid #ccc;
+  box-shadow: 1px 1px 3px rgba(0,0,110,0.33);
+  background-color: #f3f3f3;
+}
+
+ul.suggested li {
+  cursor: pointer;
+  display: inline-block;
+  padding: 2px 5px;
+  margin: 0px;
+  font-size: 0.9rem;
+
+  border: 1px solid #f3f3f3;
+  border-radius: 3px;
+}
+
+ul.suggested li:hover {
+  cursor: pointer;
+  border: 1px solid #aaa;
+  background-color: white;
+}
+

@@ -17,7 +17,7 @@ import Data.Traversable         (traverse)
 import Data.Time.Duration       (Milliseconds(..))
 
 import Control.Monad.Aff        (Aff)
-import Control.Monad.Aff.AVar   (AVAR, takeVar, makeEmptyVar)
+import Control.Monad.Aff.AVar   (AVAR)
 import Control.Monad.Aff.Class  (class MonadAff)
 
 import Halogen                  as H
@@ -31,7 +31,8 @@ import DOM.Event.Types          as ET
 import DOM.Event.FocusEvent     as FE
 import DOM.Event.KeyboardEvent  as KE
 
-import Pinboard.UI.Debounce     (Debouncer, newDebouncer, resetDebouncer, cancelDebouncer, whenQuiet)
+import Pinboard.UI.Debounce     (Debouncer)
+import Pinboard.UI.Debounce     as D
 
 -------------------------------------------------------------------------------
 
@@ -59,7 +60,8 @@ data Query k
   | Reject Int k
   | Choose Int k
 
-type Output = Void
+data Output
+  = Changed (Array String)
 
 type HTML    = H.ComponentHTML Query
 type DSL m e = H.ComponentDSL (State m e) Query Output m
@@ -123,23 +125,24 @@ component =
     eval :: Query ~> DSL m e
     eval q = case q of
       Reject n k -> k <$
-        H.modify (removeItem n)
+        H.modify (removeTag n)
 
-      Choose n k -> k <$
-        H.modify (selectItem n)
+      Choose n k -> k <$ do
+        H.modify (chooseTag n)
+        s <- H.gets unwrap
+        H.raise (Changed s.selected)
 
       OnInput input k -> k <$ do
         -- wait a tick for user to stop typing before computing suggestions
         s <- H.gets unwrap
         x <- case s.waitToSuggest of
-                  Nothing -> newDebouncer s.suggestDelay
-                  Just _x -> resetDebouncer _x s.suggestDelay
+                  Nothing -> D.create s.suggestDelay
+                  Just _x -> D.reset _x s.suggestDelay
 
         H.modify (over State (_ { value = input }))
         H.modify (over State (_ { waitToSuggest = Just x }))
 
-        -- this forks to run in the background
-        H.fork $ whenQuiet x do
+        H.fork $ D.whenQuiet x do
           matches <- H.lift (s.suggest s.selected input)
           H.modify (over State (_ { waitToSuggest = Nothing, suggested = matches }))
 
@@ -147,28 +150,26 @@ component =
         -- wait a tick for user to stop clicking before hiding suggestions
         s <- H.gets unwrap
         x <- case s.waitToHide of
-                  Nothing -> newDebouncer s.hideDelay
-                  Just _x -> resetDebouncer _x s.hideDelay
+                  Nothing -> D.create s.hideDelay
+                  Just _x -> D.reset _x s.hideDelay
         H.modify (over State (_ { waitToHide = Just x }))
 
-        -- this forks to run in the background
-        H.fork $ whenQuiet x do
-          H.modify (insertItem <<< over State (_ { waitToHide = Nothing, suggested = [] }))
+        H.fork $ D.whenQuiet x do
+          H.modify (insertTag <<< over State (_ { waitToHide = Nothing, suggested = [] }))
 
       OnFocus e k -> k <$ do
         -- if we were about to hide suggestions, don't
-        w <- H.gets (_.waitToHide <<< unwrap)
-        _ <- traverse cancelDebouncer w
+        _ <- traverse D.cancel =<< H.gets (_.waitToHide <<< unwrap)
         H.modify (over State (_ { waitToHide = Nothing }))
 
       OnKey e k -> k <$ do
         blank <- H.gets ((\s -> s.value == "") <<< unwrap)
         case KE.key e of
              "Backspace"
-               | KE.metaKey e -> H.modify reset
+               | KE.metaKey e -> H.modify resetTags
                | otherwise    -> when blank (H.modify removeLast)
-             "Escape"         -> H.modify clear
-             x | split x      -> H.modify insertItem *> noBubble e
+             "Escape"         -> H.modify clearBuffer
+             x | split x      -> H.modify insertTag *> noBubble e
              _                -> pure unit
 
     receiver :: Input -> Maybe (Query Unit)
@@ -186,23 +187,23 @@ noBubble = H.liftEff <<< E.preventDefault <<< ET.keyboardEventToEvent
 split :: String -> Boolean
 split x = x `elem` ["Enter", ",", ";", " "]
 
-reset :: forall e x. State e x -> State e x
-reset (State s) = State s { selected = [], value = "" }
+resetTags :: forall e x. State e x -> State e x
+resetTags (State s) = State s { selected = [], value = "" }
 
-clear :: forall e x. State e x -> State e x
-clear (State s) = State s { suggested = [], value = "" }
+clearBuffer :: forall e x. State e x -> State e x
+clearBuffer (State s) = State s { suggested = [], value = "" }
 
-insertItem :: forall e x. State e x -> State e x
-insertItem (State s)
+insertTag :: forall e x. State e x -> State e x
+insertTag (State s)
   | s.value == "" = State s
   | s.value `elem` s.selected = State s { suggested = [], value = "" }
   | otherwise = State s { selected = s.selected `snoc` s.value, suggested = [], value = "" }
 
-removeItem :: forall e x. Int -> State e x -> State e x
-removeItem n (State s) = State s { selected = fromMaybe s.selected (deleteAt n s.selected) }
+removeTag :: forall e x. Int -> State e x -> State e x
+removeTag n (State s) = State s { selected = fromMaybe s.selected (deleteAt n s.selected) }
 
-selectItem :: forall e x. Int -> State e x -> State e x
-selectItem n (State s) = case s.suggested !! n of
+chooseTag :: forall e x. Int -> State e x -> State e x
+chooseTag n (State s) = case s.suggested !! n of
   Nothing -> State s
   Just x  -> State s { selected = s.selected `snoc` x, suggested = [], value = "" }
 

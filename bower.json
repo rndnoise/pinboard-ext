@@ -18,7 +18,8 @@
     "purescript-chrome": "../../compute/purescript-chrome#~0.0.2",
     "purescript-uri": "^4.2.4",
     "purescript-formatters": "^3.0.1",
-    "purescript-maps": "^3.6.0"
+    "purescript-maps": "^3.6.0",
+    "purescript-strings": "^3.5.0"
   },
   "devDependencies": {
     "purescript-psci-support": "^3.0.0"

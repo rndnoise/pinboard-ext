@@ -1,8 +1,8 @@
 module Pinboard.UI.Debounce
   ( Debouncer
-  , newDebouncer
-  , cancelDebouncer
-  , resetDebouncer
+  , create
+  , cancel
+  , reset
   , whenQuiet
   ) where
 
@@ -20,13 +20,15 @@ newtype Debouncer eff =
   { var :: AVar Unit
   , fib :: Fiber eff Unit }
 
+
+
 -- |
-newDebouncer
+create
   :: forall m e
    . MonadAff (avar :: AVAR | e) m
   => Milliseconds
   -> m (Debouncer (avar :: AVAR | e))
-newDebouncer ms = liftAff do
+create ms = liftAff do
   var <- makeEmptyVar
   fib <- forkAff do
     delay ms
@@ -35,24 +37,24 @@ newDebouncer ms = liftAff do
 
 
 -- |
-cancelDebouncer
+cancel
   :: forall m e
    . MonadAff (avar :: AVAR | e) m
   => Debouncer (avar :: AVAR | e)
   -> m Unit
-cancelDebouncer (Debouncer { var, fib }) = liftAff do
+cancel (Debouncer { var, fib }) = liftAff do
   killFiber (error "canceled") fib
   killVar (error "canceled") var
 
 
 -- |
-resetDebouncer
+reset
   :: forall m e
    . MonadAff (avar :: AVAR | e) m
   => Debouncer (avar :: AVAR | e)
   -> Milliseconds
   -> m (Debouncer (avar :: AVAR | e))
-resetDebouncer db ms = cancelDebouncer db *> newDebouncer ms
+reset db ms = cancel db *> create ms
 
 
 -- |

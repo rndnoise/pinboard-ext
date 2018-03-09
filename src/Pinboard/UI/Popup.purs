@@ -20,7 +20,6 @@ import Control.Monad.Aff.AVar   (AVAR)
 import Pinboard.API             (Post, postsGet, getOptions)
 import Pinboard.UI.TagInput     as T
 
--- |
 type State =
   { title       :: String
   , url         :: String
@@ -30,20 +29,15 @@ type State =
   , suggested   :: Maybe (Array String)
   , recommended :: Maybe (Array String)
   , others      :: Maybe Number
-  , time        :: Maybe DateTime
-  }
+  , time        :: Maybe DateTime }
 
-
--- |
 data Query k
   = Set Boolean k
   | Get (Boolean -> k)
   | OnTag T.Output k
 
--- |
 type Input = Unit
 
--- |
 type Output = Void
 
 data Slot = TagSlot
@@ -66,7 +60,7 @@ component
    . MonadAff (dom :: DOM, avar :: AVAR | e) m
   => H.Component HH.HTML Query Input Output m
 component =
-  H.parentComponent                     -- ComponentSpec h s f i o m
+  H.parentComponent               -- ComponentSpec h s f i o m
   { initialState                  -- i -> s
   , render                        -- s -> h Void (f Unit)
   , eval                          -- f ~> (ComponentDSL s f o m)
@@ -140,3 +134,6 @@ component =
       Get k -> pure (k true)
       Set v k -> pure k
       OnTag o k -> pure k
+
+    receiver :: Input -> Maybe (Query Unit)
+    receiver _ = Nothing

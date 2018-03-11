@@ -13,6 +13,7 @@ import Data.Array               (snoc, init, mapWithIndex, (!!), deleteAt)
 import Data.Maybe               (Maybe(..), fromMaybe)
 import Data.Newtype             (class Newtype, over, wrap, unwrap)
 import Data.Foldable            (elem)
+import Data.Tuple               (fst)
 import Data.Traversable         (traverse)
 import Data.Time.Duration       (Milliseconds(..))
 
@@ -33,6 +34,7 @@ import DOM.Event.KeyboardEvent  as KE
 
 import Pinboard.UI.Debounce     (Debouncer)
 import Pinboard.UI.Debounce     as D
+import Pinboard.UI.Complete     as C
 
 -------------------------------------------------------------------------------
 
@@ -82,7 +84,8 @@ component =
     initialState :: Input -> State m e
     initialState _ =
       State
-      { suggest       : \_ _ -> pure ["one", "two", "ten"]
+      { suggest       : let q = C.commonSubsequences C.corpus
+                         in \_ x -> pure (map fst (q x))
       , hideDelay     : Milliseconds 150.0
       , suggestDelay  : Milliseconds 150.0
       , selected      : []

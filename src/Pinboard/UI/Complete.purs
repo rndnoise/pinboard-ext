@@ -2,8 +2,8 @@ module Pinboard.UI.Complete
   ( Span(..)
   , Part(..)
   , parse
-  , matches
-  , iron
+  , commonSubsequences
+  , corpus
   ) where
 
 import Prelude
@@ -13,7 +13,9 @@ import Data.List                (List(..), (:), fromFoldable, uncons, zipWith)
 import Data.Array               (catMaybes)
 import Data.Either              (fromRight)
 import Data.Maybe               (Maybe(..), fromMaybe)
+import Data.Tuple               (Tuple(..), fst)
 import Data.Char                (toUpper)
+import Data.Sequence            (Seq, null)
 import Data.String              (singleton, drop)
 import Data.String.Unsafe       (charAt)
 import Data.String.Regex        (Regex, regex, match, split)
@@ -22,20 +24,11 @@ import Partial.Unsafe           (unsafePartial)
 import Data.Generic.Rep         (class Generic)
 import Data.Generic.Rep.Show    (genericShow)
 
-import Pinboard.UI.Search       (Search, tell)
+import Pinboard.UI.Search       (Search(..), tell)
 
 
 -- | Concise tuple
 data T a = T a a
-
-
--- |
-type Result = List Span
-data Span
-  = M String  -- matched
-  | U String  -- unmatched
-derive instance gSpan :: Generic Span _
-instance showSpan :: Show Span where show = genericShow
 
 
 -- |
@@ -48,47 +41,69 @@ instance showPart :: Show Part where show = genericShow
 
 
 -- |
-iron :: Result -> Result
-iron Nil                           = Nil
-iron (Cons (M a) (Cons (M b) cs))  = iron (M (a <> b) : cs)
-iron (Cons (U a) (Cons (U b) cs))  = iron (U (a <> b) : cs)
-iron (Cons (U a) (Cons (M "") cs)) = iron (U a : cs)
-iron (Cons (M a) (Cons (U "") cs)) = iron (M a : cs)
-iron (Cons (M "") bs)              = iron bs
-iron (Cons (U "") bs)              = iron bs
-iron (Cons a bs)                   = a : iron bs
+type Result = List Span
+data Span
+  = M String  -- matched
+  | U String  -- unmatched
+derive instance gSpan :: Generic Span _
+instance showSpan :: Show Span where show = genericShow
+
 
 -- |
-matches :: Split -> Split -> Search Result Unit
-matches x y = case T x y of
-  T Nil bs                            -> consume bs
-  T (Cons a as) Nil                   -> empty
-  T as@(Cons (S _) _) (Cons (L b) bs) ->  log (U b) *> matches as bs
-  T as@(Cons (L _) _) (Cons (S b) bs) ->  log (U b) *> matches as bs
-  T z@(Cons (S a) as) (Cons (S b) bs) -> (log (U b) *> matches z bs) <|> (log (M b) *> matches as bs)
-  T z@(Cons (L a) as) (Cons (L b) bs) -> (log (U b) *> matches z bs) <|> letters a b (T as bs)
+smooth :: Result -> Result
+smooth xs = op xs
   where
-    log :: Span -> Search (List Span) Unit
-    log = tell <<< (_ : Nil)
+    op Nil                           = Nil
+    op (Cons (M a) (Cons (M b) cs))  = op (M (a <> b) : cs)
+    op (Cons (U a) (Cons (U b) cs))  = op (U (a <> b) : cs)
+    op (Cons (U a) (Cons (M "") cs)) = op (U a : cs)
+    op (Cons (M a) (Cons (U "") cs)) = op (M a : cs)
+    op (Cons (M "") bs)              = op bs
+    op (Cons (U "") bs)              = op bs
+    op (Cons a bs)                   = a : op bs
 
-    consume :: Split -> Search Result Unit
-    consume Nil             = pure unit
-    consume (Cons (S b) bs) = log (U b) *> consume bs
-    consume (Cons (S b) bs) = log (U b) *> consume bs
-    consume (Cons (L b) bs) = log (U b) *> consume bs
+-- |
+commonSubsequences :: Array String -> String -> Array (Tuple String (Seq Result))
+commonSubsequences ts_ =
+  let ts = map (\x -> Tuple x (parse x)) ts_
+   in \q_ -> let q = parse q_
+              in catMaybes (map (\(Tuple s p) -> Tuple s <$> try q p) ts)
+  where
+    try q p =
+      case sub q p of
+           Search xs | null xs   -> Nothing
+                     | otherwise -> Just (map fst xs)
 
-    letters :: String -> String -> T Split -> Search (List Span) Unit
-    letters "" b (T as bs) = matches as (L b : bs)
-    letters a "" (T as bs) = matches (L a : as) bs
-    letters a b xx =
-      let a0 = charAt 0 a
-          b0 = charAt 0 b
-          as = drop 1 a
-          bs = drop 1 b
-          no = log (U (singleton b0)) *> letters a bs xx
-       in no <|> if toUpper a0 == toUpper b0
-                    then log (M (singleton b0)) *> letters as bs xx
-                    else empty
+    sub :: Split -> Split -> Search Result Unit
+    sub x y = case T x y of
+      T Nil bs                            -> consume bs
+      T (Cons a as) Nil                   -> empty
+      T as@(Cons (S _) _) (Cons (L b) bs) ->  log (U b) *> sub as bs
+      T as@(Cons (L _) _) (Cons (S b) bs) ->  log (U b) *> sub as bs
+      T z@(Cons (S a) as) (Cons (S b) bs) -> (log (U b) *> sub z bs) <|> (log (M b) *> sub as bs)
+      T z@(Cons (L a) as) (Cons (L b) bs) -> (log (U b) *> sub z bs) <|> letters a b (T as bs)
+      where
+        log :: Span -> Search (List Span) Unit
+        log = tell <<< (_ : Nil)
+
+        consume :: Split -> Search Result Unit
+        consume Nil             = pure unit
+        consume (Cons (S b) bs) = log (U b) *> consume bs
+        consume (Cons (S b) bs) = log (U b) *> consume bs
+        consume (Cons (L b) bs) = log (U b) *> consume bs
+
+        letters :: String -> String -> T Split -> Search (List Span) Unit
+        letters "" b (T as bs) = sub as (L b : bs)
+        letters a "" (T as bs) = sub (L a : as) bs
+        letters a b xx =
+          let a0 = charAt 0 a
+              b0 = charAt 0 b
+              as = drop 1 a
+              bs = drop 1 b
+              no = log (U (singleton b0)) *> letters a bs xx
+           in no <|> if toUpper a0 == toUpper b0
+                        then log (M (singleton b0)) *> letters as bs xx
+                        else empty
 
 -- |
 parse :: String -> Split

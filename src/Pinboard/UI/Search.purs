@@ -13,6 +13,7 @@ import Control.MonadZero        (class MonadZero)
 import Data.Generic.Rep         (class Generic)
 import Data.Generic.Rep.Show    (genericShow)
 
+-- |
 newtype Search w a = Search (Seq (Tuple w a))
 
 derive instance eqSearch :: (Eq w, Eq a) => Eq (Search w a)

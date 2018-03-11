@@ -1,117 +1,112 @@
 module Pinboard.UI.Complete
-  ( split
-  , match
-  , corpus
-  , Result(..)
-  , Score
-  , Span(..)
-  , Split
+  ( Span(..)
   , Part(..)
-  )
-  where
+  , parse
+  , matches
+  , iron
+  ) where
 
 import Prelude
-import Partial.Unsafe           (unsafePartial)
-import Data.Maybe               (Maybe(..), fromMaybe, fromJust)
-import Data.Array               ((:), drop, uncons, catMaybes, zipWith, length, unsafeIndex)
+import Control.Alt              ((<|>))
+import Control.Plus             (empty)
+import Data.List                (List(..), (:), fromFoldable, uncons, zipWith)
+import Data.Array               (catMaybes)
+import Data.Either              (fromRight)
+import Data.Maybe               (Maybe(..), fromMaybe)
 import Data.Char                (toUpper)
-import Data.String              as S
-import Data.Either              (Either, fromRight)
-import Data.Traversable         (traverse, sequence)
-import Data.String.Regex        as R
-import Data.String.Regex.Flags  as R
+import Data.String              (singleton, drop)
+import Data.String.Unsafe       (charAt)
+import Data.String.Regex        (Regex, regex, match, split)
+import Data.String.Regex.Flags  (global)
+import Partial.Unsafe           (unsafePartial)
 import Data.Generic.Rep         (class Generic)
 import Data.Generic.Rep.Show    (genericShow)
 
--- a:b matches f[a]rm:co[b]b
--- ab  matches f[a]rm:co[b]b
--- ab  matches t[ab]s
--- ab  matches c[a]r[b]s
--- ab  matches r[a]t:[b]at
+import Pinboard.UI.Search       (Search, tell)
 
-complete :: forall m. Applicative m => Array String -> String -> m (Array Result)
-complete xs x = pure []
 
-match :: Split String -> Split String -> Boolean
-match xs ys = aux 0 0
-  where
-    lx = length xs
-    ly = length ys
+-- | Concise tuple
+data T a = T a a
 
-    -- match up xs[ix] with ys, but abort at the end of either
-    aux :: Int -> Int -> Boolean
-    aux ix iy
-      | ix >= lx  = true
-      | iy >= ly  = false
-      | otherwise = cmp ix iy (xs `at` ix) (ys `at` iy)
 
-    -- check if xs[ix] matches ys[iy], otherwise skip to next b
-    cmp :: Int -> Int -> Part String -> Part String -> Boolean
-    cmp ix iy (Symbols _) (Letters _) = aux ix (iy+1)
-    cmp ix iy (Letters _) (Symbols _) = aux ix (iy+1)
-    cmp ix iy (Symbols a) (Symbols b) = aux ix (iy+2) || aux (ix+1) (iy+1)
-    cmp ix iy (Letters a) (Letters b) = aux ix (iy+2) || tok ix iy 0 0 a b (S.length a) (S.length b)
-
-    -- compare chars in two strings, (a=xs[ix])[ia] and (b=ys[iy])[ib]
-    tok :: Int -> Int -> Int -> Int -> String -> String -> Int -> Int -> Boolean
-    tok ix iy ia ib a b la lb
-      | la - ia <= 0 = if ix+1 >= lx
-                          then true
-                          else cmp (ix+1) iy (xs `at` (ix+1)) (suffix b (ib+1))
-      | lb - ib <= 0 = if iy+2 >= ly
-                          then false
-                          else cmp ix (iy+2) (suffix a ia) (ys `at` (iy+2))
-      | (a `char` ia) `eq` (b `char` ib)
-                  = tok ix iy ia (ib+1) a b la lb || tok ix iy (ia+1) (ib+1) a b la lb
-      | otherwise = tok ix iy ia (ib+1) a b la lb
-
-    at xs k  = unsafePartial (unsafeIndex xs k)
-    eq a b   = toUpper a == toUpper b
-    char s k = unsafePartial (fromJust (S.charAt k s))
-    suffix s n = Letters (S.drop n s)
-
--------------------------------------------------------------------------------
-
-type Score  = Int
-data Result = Result Score (Array Span)
-
+-- |
+type Result = List Span
 data Span
-  = Matched String
-  | Unmatch String
-
-type Split a = Array (Part a)
-data Part a
-  = Symbols a
-  | Letters a
-
-derive instance eqSpan :: Eq Span
-derive instance eqPart :: Eq a => Eq (Part a)
-derive instance functorPart :: Functor Part
-derive instance genericSpan :: Generic Span _
-derive instance genericPart :: Generic (Part a) _
-derive instance genericResult :: Generic Result _
-
+  = M String  -- matched
+  | U String  -- unmatched
+derive instance gSpan :: Generic Span _
 instance showSpan :: Show Span where show = genericShow
-instance showPart :: Show a => Show (Part a) where show = genericShow
-instance showResult :: Show Result where show = genericShow
 
-split :: String -> Split String
-split "" = []
-split s  =
-  case uncons letters of
-       Nothing -> letters
-       Just {head,tail} ->
-         let ps = join (zipWith (\d t -> [d,t]) symbols tail)
-          in head : ps
+
+-- |
+type Split = List Part
+data Part
+  = S String  -- symbols
+  | L String  -- letters
+derive instance gPart :: Generic Part _
+instance showPart :: Show Part where show = genericShow
+
+
+-- |
+iron :: Result -> Result
+iron Nil                           = Nil
+iron (Cons (M a) (Cons (M b) cs))  = iron (M (a <> b) : cs)
+iron (Cons (U a) (Cons (U b) cs))  = iron (U (a <> b) : cs)
+iron (Cons (U a) (Cons (M "") cs)) = iron (U a : cs)
+iron (Cons (M a) (Cons (U "") cs)) = iron (M a : cs)
+iron (Cons (M "") bs)              = iron bs
+iron (Cons (U "") bs)              = iron bs
+iron (Cons a bs)                   = a : iron bs
+
+-- |
+matches :: Split -> Split -> Search Result Unit
+matches x y = case T x y of
+  T Nil bs                            -> consume bs
+  T (Cons a as) Nil                   -> empty
+  T as@(Cons (S _) _) (Cons (L b) bs) ->  log (U b) *> matches as bs
+  T as@(Cons (L _) _) (Cons (S b) bs) ->  log (U b) *> matches as bs
+  T z@(Cons (S a) as) (Cons (S b) bs) -> (log (U b) *> matches z bs) <|> (log (M b) *> matches as bs)
+  T z@(Cons (L a) as) (Cons (L b) bs) -> (log (U b) *> matches z bs) <|> letters a b (T as bs)
   where
-    regex :: R.Regex
-    regex = unsafePartial (fromRight (R.regex "[^a-zA-Z0-9]+" R.global))
+    log :: Span -> Search (List Span) Unit
+    log = tell <<< (_ : Nil)
 
-    letters :: Array (Part String)
-    letters = map Letters (R.split regex s)
+    consume :: Split -> Search Result Unit
+    consume Nil             = pure unit
+    consume (Cons (S b) bs) = log (U b) *> consume bs
+    consume (Cons (S b) bs) = log (U b) *> consume bs
+    consume (Cons (L b) bs) = log (U b) *> consume bs
 
-    symbols :: Array (Part String)
-    symbols = map Symbols (fromMaybe [] (map catMaybes (R.match regex s)))
+    letters :: String -> String -> T Split -> Search (List Span) Unit
+    letters "" b (T as bs) = matches as (L b : bs)
+    letters a "" (T as bs) = matches (L a : as) bs
+    letters a b xx =
+      let a0 = charAt 0 a
+          b0 = charAt 0 b
+          as = drop 1 a
+          bs = drop 1 b
+          no = log (U (singleton b0)) *> letters a bs xx
+       in no <|> if toUpper a0 == toUpper b0
+                    then log (M (singleton b0)) *> letters as bs xx
+                    else empty
+
+-- |
+parse :: String -> Split
+parse "" = Nil
+parse s  =
+  case uncons letters of
+       Nothing          -> letters
+       Just {head,tail} -> head : join (zipWith (\d t -> d : t : Nil) symbols tail)
+  where
+    pattern :: Regex
+    pattern = unsafePartial (fromRight (regex "[^a-zA-Z0-9]+" global))
+
+    letters :: List Part
+    letters = map L (fromFoldable (split pattern s))
+
+    symbols :: List Part
+    symbols = map S (fromFoldable (fromMaybe [] (map catMaybes (match pattern s))))
+
 
 corpus :: Array String
 corpus =

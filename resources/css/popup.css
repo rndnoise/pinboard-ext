@@ -16,3 +16,5 @@ div.main {
   margin: 0.5rem 1rem 1rem 1rem;
 }
 
+label.checkbox { display: inline-block; }
+button { display: inline-block; float: right; }

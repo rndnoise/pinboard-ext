@@ -69,6 +69,11 @@ ul.suggested li {
   border-radius: 3px;
 }
 
+ul.suggested li.highlighted {
+  border: 1px solid #aaa;
+  background-color: white;
+}
+
 ul.suggested li:hover {
   cursor: pointer;
   border: 1px solid #aaa;

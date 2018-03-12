@@ -9,15 +9,15 @@ module Pinboard.UI.TagInput
 import Partial.Unsafe (unsafeCrashWith)
 
 import Prelude
-import Data.Array               (snoc, init, mapWithIndex, (!!), deleteAt)
+import Data.Array               (find, snoc, init, mapWithIndex, (!!), deleteAt, length)
 import Data.Maybe               (Maybe(..), fromMaybe)
 import Data.Newtype             (class Newtype, over, wrap, unwrap)
 import Data.Foldable            (elem)
-import Data.Tuple               (fst)
+import Data.Tuple               (Tuple(..), fst, snd)
+import Data.Filterable          (maybeBool)
 import Data.Traversable         (traverse)
 import Data.Time.Duration       (Milliseconds(..))
 
-import Control.Monad.Aff        (Aff)
 import Control.Monad.Aff.AVar   (AVAR)
 import Control.Monad.Aff.Class  (class MonadAff)
 
@@ -48,6 +48,7 @@ newtype State m e =
   , selected      :: Array String
   , suggested     :: Array String
   , value         :: String
+  , hidden        :: Boolean
   , highlighted   :: Maybe Int
   , waitToHide    :: Maybe (Debouncer (avar :: AVAR, dom :: DOM | e))
   , waitToSuggest :: Maybe (Debouncer (avar :: AVAR, dom :: DOM | e)) }
@@ -91,6 +92,7 @@ component =
       , selected      : []
       , suggested     : []
       , value         : ""
+      , hidden        : true
       , highlighted   : Nothing
       , waitToHide    : Nothing
       , waitToSuggest : Nothing }
@@ -109,7 +111,7 @@ component =
                 , HE.onFocus (HE.input OnFocus)
                 , HE.onKeyDown (HE.input OnKey)
                 , HE.onValueInput (HE.input OnInput) ] ]
-        , renderSuggestions s.suggested ]
+        , renderSuggestions s.suggested s.highlighted s.hidden ]
       where
         renderSelections [] = HH.text ""
         renderSelections xs =
@@ -118,11 +120,13 @@ component =
               [ HE.onClick (HE.input_ (Reject n)) ]
               [ HH.text x ]
 
-        renderSuggestions [] = HH.text ""
-        renderSuggestions xs =
+        renderSuggestions _ _ true = HH.text ""
+        renderSuggestions [] ix _  = HH.text ""
+        renderSuggestions xs ix _  =
           HH.ul [HP.class_ (H.ClassName "suggested")] $ flip mapWithIndex xs \n x ->
             HH.li
-              [ HE.onClick (HE.input_ (Choose n)) ]
+              [ HE.onClick (HE.input_ (Choose n))
+              , HP.class_ (H.ClassName (if Just n == ix then "highlighted" else "")) ]
               [ HH.text x ]
 
     eval :: Query ~> DSL m e
@@ -131,7 +135,7 @@ component =
         H.modify (removeTag n)
 
       Choose n k -> k <$ do
-        H.modify (chooseTag n)
+        H.modify (chooseSuggestion n)
         s <- H.gets unwrap
         H.raise (Changed s.selected)
 
@@ -142,12 +146,12 @@ component =
                   Nothing -> D.create s.suggestDelay
                   Just _x -> D.reset _x s.suggestDelay
 
-        H.modify (over State (_ { value = input }))
+        H.modify (over State (_ { value = input, hidden = false }))
         H.modify (over State (_ { waitToSuggest = Just x }))
 
         H.fork $ D.whenQuiet x do
           matches <- H.lift (s.suggest s.selected input)
-          H.modify (over State (_ { waitToSuggest = Nothing, suggested = matches }))
+          H.modify (updateSuggested matches)
 
       OnBlur e k -> k <$ do
         -- wait a tick for user to stop clicking before hiding suggestions
@@ -158,7 +162,7 @@ component =
         H.modify (over State (_ { waitToHide = Just x }))
 
         H.fork $ D.whenQuiet x do
-          H.modify (insertTag <<< over State (_ { waitToHide = Nothing, suggested = [] }))
+          H.modify (pushBuffer <<< over State (_ { waitToHide = Nothing, suggested = [] }))
 
       OnFocus e k -> k <$ do
         -- if we were about to hide suggestions, don't
@@ -167,13 +171,58 @@ component =
 
       OnKey e k -> k <$ do
         blank <- H.gets ((\s -> s.value == "") <<< unwrap)
+        s     <- H.gets unwrap
         case KE.key e of
+             -- ⌘ ⌫   clears everything
+             --
+             -- ⌫     when buffer is empty, removes most recent entry
+             --       otherwise, removes char to the left of cursor
+             --
+             -- ↩︎     when suggestion highlighted, choose it
+             --       otherwise, add buffer text
+             --
+             -- ,     add buffer text (do nothing if buffer is empty)
+             -- ;     add buffer text (do nothing if buffer is empty)
+             -- Space add buffer text (do nothing if buffer is empty)
+             --
+             -- Esc   removes highlight, hides suggestions
+             --
+             -- Tab   when buffer is empty, focus next field
+             --       when suggestions are empty, add buffer text
+             --       when only one suggestion, choose it
+             --       otherwise, same as right arrow
+             --
+             -- Shift-Tab
+             --       when a suggestion is highlighted, highlight prev
+             --       otherwise, focus previous field
+             --
+             -- ←     when a suggestion is highlighted, highlight prev
+             -- →     when a suggestion is highlighted, highlight next
+             --
+             -- text  update suggestions and show them
              "Backspace"
-               | KE.metaKey e -> H.modify resetTags
-               | otherwise    -> when blank (H.modify removeLast)
-             "Escape"         -> H.modify clearBuffer
-             x | split x      -> H.modify insertTag *> noBubble e
-             _                -> pure unit
+               | KE.metaKey e     -> H.modify resetState
+               | otherwise        -> when blank (H.modify removeLast)
+             "Enter"              -> noBubble e *> case s.highlighted of
+                                       Just n  -> H.modify (chooseSuggestion n)
+                                       Nothing -> H.modify pushBuffer
+             x | pb x             -> H.modify pushBuffer  *> noBubble e
+             "Escape"             -> H.modify clearBuffer *> noBubble e
+             "Tab"
+               | KE.shiftKey e    -> H.modify highlightPrev *> noBubble e
+               | otherwise        -> H.modify highlightNext *> noBubble e
+             "ArrowLeft"
+               | not KE.shiftKey e &&
+                 not KE.metaKey e &&
+                 not KE.altKey e  -> H.modify highlightPrev *> noBubble e
+             "ArrowRight"
+               | not KE.shiftKey e &&
+                 not KE.metaKey e &&
+                 not KE.altKey e  -> H.modify highlightNext *> noBubble e
+             "ArrowDown"
+               | s.hidden         -> H.modify showSuggestions
+             _                    -> pure unit
+        where pb x = x `elem` [",", ";", " "]
 
     receiver :: Input -> Maybe (Query Unit)
     receiver _ = Nothing
@@ -187,28 +236,67 @@ noBubble
   -> DSL m e Unit
 noBubble = H.liftEff <<< E.preventDefault <<< ET.keyboardEventToEvent
 
-split :: String -> Boolean
-split x = x `elem` ["Enter", ",", ";", " "]
+showSuggestions :: forall e x. State e x -> State e x
+showSuggestions (State s) = State (s { hidden = false })
 
-resetTags :: forall e x. State e x -> State e x
-resetTags (State s) = State s { selected = [], value = "" }
+hideSuggestions :: forall e x. State e x -> State e x
+hideSuggestions (State s) = State (s { hidden = true })
+
+highlightPrev :: forall e x. State e x -> State e x
+highlightPrev (State s)
+  | s.hidden  = State s
+  | otherwise = State $
+    case s.highlighted of
+         Nothing -> s { highlighted = maybeBool (_ >= 0) (length s.suggested - 1) }
+         Just n  -> s { highlighted = maybeBool (_ >= 0) (n - 1) }
+
+highlightNext :: forall e x. State e x -> State e x
+highlightNext (State s)
+  | s.hidden  = State s
+  | otherwise = State $
+    case s.highlighted of
+         Nothing -> s { highlighted = maybeBool (_ < length s.suggested) 0 }
+         Just n  -> s { highlighted = maybeBool (_ < length s.suggested) (n + 1) }
+
+updateSuggested :: forall e x. Array String -> State e x -> State e x
+updateSuggested ss (State s) = State $ case s.highlighted of
+  Nothing -> s { waitToSuggest = Nothing, suggested = ss }
+  Just n  ->
+    -- if currently highlighted item is also in the new
+    -- set of suggestions, then keep it highlighted
+    let m = findIndex ss =<< s.suggested !! n
+       in s { waitToSuggest = Nothing, suggested = ss, highlighted = m }
+
+findIndex :: forall a. Eq a => Array a -> a -> Maybe Int
+findIndex xs x = fst <$> find ((x == _) <<< snd) (mapWithIndex Tuple xs)
+
+resetState :: forall e x. State e x -> State e x
+resetState (State s) = State s { suggested = [], selected = [], value = "" }
 
 clearBuffer :: forall e x. State e x -> State e x
 clearBuffer (State s) = State s { suggested = [], value = "" }
 
-insertTag :: forall e x. State e x -> State e x
-insertTag (State s)
-  | s.value == "" = State s
-  | s.value `elem` s.selected = State s { suggested = [], value = "" }
+pushBuffer :: forall e x. State e x -> State e x
+pushBuffer (State s)
+  | s.value == "" = State s { hidden = true }
+  | isDuplicate s s.value = State s { hidden = true, suggested = [], value = "" }
   | otherwise = State s { selected = s.selected `snoc` s.value, suggested = [], value = "" }
 
 removeTag :: forall e x. Int -> State e x -> State e x
 removeTag n (State s) = State s { selected = fromMaybe s.selected (deleteAt n s.selected) }
 
-chooseTag :: forall e x. Int -> State e x -> State e x
-chooseTag n (State s) = case s.suggested !! n of
+isDuplicate :: forall r. { selected :: Array String | r } -> String -> Boolean
+isDuplicate s x = x `elem` s.selected
+
+chooseSuggestion :: forall e x. Int -> State e x -> State e x
+chooseSuggestion n (State s) = case s.suggested !! n of
   Nothing -> State s
-  Just x  -> State s { selected = s.selected `snoc` x, suggested = [], value = "" }
+  Just x
+    | isDuplicate s x -> State s { suggested = [], highlighted = Nothing, value = "" }
+    | otherwise       -> State s { selected     = s.selected `snoc` x
+                                 , suggested    = []
+                                 , highlighted  = Nothing
+                                 , value        = "" }
 
 removeLast :: forall e x. State e x -> State e x
 removeLast (State s) = State s { selected = fromMaybe [] (init s.selected) }

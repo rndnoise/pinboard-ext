@@ -7,10 +7,10 @@ module Pinboard.UI.Debounce
   ) where
 
 import Prelude
-import Control.Monad.Aff            (Aff, Fiber, apathize, delay, error, forkAff, killFiber)
+import Control.Monad.Aff            (Fiber, attempt, delay, error, forkAff, killFiber)
 import Control.Monad.Aff.Class      (class MonadAff, liftAff)
 import Control.Monad.Aff.AVar       (AVar, putVar, takeVar, killVar, makeEmptyVar, AVAR)
-import Control.Monad.Eff.Exception  (Error)
+import Data.Either                  (Either(..))
 import Data.Time.Duration           (Milliseconds)
 
 
@@ -19,7 +19,6 @@ newtype Debouncer eff =
   Debouncer
   { var :: AVar Unit
   , fib :: Fiber eff Unit }
-
 
 
 -- |
@@ -62,7 +61,10 @@ whenQuiet
   :: forall m e
    . MonadAff (avar :: AVAR | e) m
   => Debouncer (avar :: AVAR | e)
-  -> m _
   -> m Unit
-whenQuiet (Debouncer { var }) action =
-  unit <$ (liftAff (apathize (takeVar var)) *> action)
+  -> m Unit
+whenQuiet (Debouncer { var }) action = unit <$ do
+  x <- liftAff (attempt (takeVar var))
+  case x of
+       Right _ -> action
+       _       -> pure unit

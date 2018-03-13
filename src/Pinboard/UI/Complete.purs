@@ -7,8 +7,6 @@ module Pinboard.UI.Complete
   ) where
 
 import Prelude
-import Control.Alt              ((<|>))
-import Control.Plus             (empty)
 import Data.List                (List(..), (:), fromFoldable, uncons, zipWith)
 import Data.Array               (catMaybes)
 import Data.Either              (fromRight)
@@ -24,7 +22,11 @@ import Partial.Unsafe           (unsafePartial)
 import Data.Generic.Rep         (class Generic)
 import Data.Generic.Rep.Show    (genericShow)
 
-import Pinboard.UI.Search       (Search(..), tell)
+import Control.Alt                ((<|>))
+import Control.Plus               (empty)
+import Control.Monad.Writer.Trans (WriterT, execWriterT, tell)
+
+type Search w a = WriterT w Seq a
 
 
 -- | Concise tuple
@@ -70,9 +72,9 @@ commonSubsequences ts_ =
               in catMaybes (map (\(Tuple s p) -> Tuple s <$> try q p) ts)
   where
     try q p =
-      case sub q p of
-           Search xs | null xs   -> Nothing
-                     | otherwise -> Just (map fst xs)
+      case execWriterT (sub q p) of
+           xs | null xs   -> Nothing
+              | otherwise -> Just xs
 
     sub :: Split -> Split -> Search Result Unit
     sub x y = case T x y of

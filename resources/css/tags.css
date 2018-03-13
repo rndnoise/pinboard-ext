@@ -1,12 +1,19 @@
-.tags {
+#tags {
   width: 100%;
   border: 1px solid #ccc;
   overflow: hidden;
 }
 
-.tags > div { overflow: hidden; }
+#tags.focus {
+  outline-color: rgb(59,153,252);
+  outline-offset: -2px;
+  outline-style: auto;
+  outline-width: 5px;
+}
 
-.tags input {
+#tags > div { overflow: hidden; }
+
+#tags input {
   width: 100%;
   margin: 0;
   border: none;

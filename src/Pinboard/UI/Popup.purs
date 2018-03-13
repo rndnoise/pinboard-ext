@@ -2,17 +2,20 @@ module Pinboard.UI.Popup where
 
 import Prelude
 import Data.Array               (head, uncons)
-import Data.Maybe               (Maybe(..), fromMaybe)
+import Data.Maybe               (Maybe(..), fromMaybe, isJust)
 import Data.Tuple               (fst)
 import Data.DateTime            (DateTime)
 import Data.Either              (Either(..), either)
 import Data.Newtype             (class Newtype, wrap, unwrap)
+import Data.Monoid              (guard)
 import Data.Time.Duration       (Milliseconds(..))
 import Data.Formatter.DateTime  (formatDateTime)
 import Data.Traversable         (traverse)
-import Control.Monad.Eff        (Eff)
 import Control.Monad.Aff        (Aff)
 import Control.Monad.Aff.Class  (class MonadAff)
+import Control.Monad.Eff        (Eff)
+import Control.Monad.Eff.Now    (NOW, nowDateTime)
+import Control.Comonad          (extract)
 import Network.HTTP.Affjax      (AJAX)
 import DOM.HTML.HTMLElement     (focus) as H
 import Halogen                  as H
@@ -33,11 +36,11 @@ import Control.Monad.Aff.AVar   (AVAR)
 import Pinboard.UI.TagInput     as TI
 import Pinboard.UI.Complete     as CC
 import Pinboard.API             (Post, Suggestions, Error(..),
-                                  postsGet, postsAdd, addOptions, getOptions)
+                                  postsGet, postsAdd, postsDelete, addOptions, getOptions)
 
 
 -- | This is executed when the user clicks the Pinboard toolbar icon
-main :: Eff (HA.HalogenEffects (ajax :: AJAX, chrome :: CHROME)) Unit
+main :: Eff (HA.HalogenEffects (ajax :: AJAX, chrome :: CHROME, now :: NOW)) Unit
 main = HA.runHalogenAff do
   body <- HA.awaitBody
   tabs <- CT.query (CT.queryOptions { currentWindow = Just true, active = Just true })
@@ -71,7 +74,8 @@ derive instance newtypeState :: Newtype State _
 
 data Status
   = Error String
-  | Message String
+  | Normal String
+  | Success String
 
 data Query k
   = Init k
@@ -82,9 +86,10 @@ data Query k
   | OnToRead Boolean k
   | OnPrivate Boolean k
   | Save ET.MouseEvent k
+  | Delete ET.MouseEvent k
   | ApiPostGet (Either Error (Array Post)) k
-  | ApiPostSuggest (Either Error Suggestions) k
   | ApiPostAdd (Either Error Unit) k
+  | ApiPostDelete (Either Error Unit) k
   | FromTagWidget (TI.Output String) k
 
 type Input = Maybe CT.Tab
@@ -103,7 +108,7 @@ type DSL m  = H.ParentDSL State Query (TI.Query String) Slot Output m
 
 component
   :: forall e m
-   . MonadAff (dom :: DOM, avar :: AVAR, ajax :: AJAX | e) m
+   . MonadAff (dom :: DOM, avar :: AVAR, ajax :: AJAX, now :: NOW | e) m
   => H.Component HH.HTML Query Input Output m
 component =
   H.lifecycleParentComponent            -- ComponentSpec h s f i o m
@@ -127,73 +132,71 @@ component =
 
     render :: State -> HTML m
     render (State s) =
-      HH.div
-        [ class_ "main" ]
-        [ fromMaybe (HH.text "OK") (map renderStatus s.status)
-        , HH.form_
-            [ HH.label
-                [ HP.for "url"
-                , class_ "text" ]
-                [ HH.text "URL:"
-                , HH.input
-                    [ HP.id_ "url"
-                    , HP.type_ HP.InputUrl
-                    , HP.value s.url
-                    , HE.onValueInput (HE.input OnUrl) ] ]
-
-            , HH.label
-                [ HP.for "title"
-                , class_ "text" ]
-                [ HH.text "Title:"
-                , HH.input
-                    [ HP.id_ "title"
-                    , HP.type_ HP.InputText
-                    , HP.value s.title
-                    , HE.onValueInput (HE.input OnTitle) ] ]
-
-            , HH.label
-                [ HP.for "tags"
-                , class_ "select" ]
-                [ HH.text "Tags:"
-                , HH.slot TagSlot (TI.component cfg) unit (HE.input FromTagWidget) ]
-
-            , HH.label
-                [ HP.for "desc"
-                , class_ "textarea" ]
-                [ HH.text "Description:"
-                , HH.textarea
-                    [ HP.id_ "desc"
-                    , HP.value s.desc
-                    , HE.onValueInput (HE.input OnDesc) ] ]
-
-            , HH.label
-                [ HP.for "toread"
-                , class_ "checkbox" ]
-                [ HH.input
-                    [ HP.id_ "toread"
-                    , HP.type_ HP.InputCheckbox
-                    , HP.checked s.toRead
-                    , HE.onChecked (HE.input OnToRead) ]
-                , HH.text "Read later" ]
-
-            , HH.label
-                [ HP.for "private"
-                , class_ "checkbox" ]
-                [ HH.input
-                    [ HP.id_ "private"
-                    , HP.type_ HP.InputCheckbox
-                    , HP.checked s.private
-                    , HE.onChecked (HE.input OnPrivate) ]
-                , HH.text "Private" ]
-
-            , HH.button
-                [ HE.onClick (HE.input Save) ]
-                [ HH.text "Save" ]
+      HH.div_
+      [ fromMaybe (HH.text "") (map renderStatus s.status)
+      , HH.div [ class_ "main" ]
+        [ HH.form_ $
+          [ HH.label [ HP.for "url", class_ "text" ]
+            [ HH.text "URL:"
+            , HH.input
+              [ HP.id_ "url"
+              , HP.type_ HP.InputUrl
+              , HP.value s.url
+              , HE.onValueInput (HE.input OnUrl) ]
             ]
+
+          , HH.label [ HP.for "title", class_ "text" ]
+            [ HH.text "Title:"
+            , HH.input
+              [ HP.id_ "title"
+              , HP.type_ HP.InputText
+              , HP.value s.title
+              , HE.onValueInput (HE.input OnTitle) ]
+            ]
+
+          , HH.label [ HP.for "tags", class_ "select" ]
+            [ HH.text "Tags:"
+            , HH.slot TagSlot (TI.component cfg) unit (HE.input FromTagWidget) ]
+
+          , HH.label [ HP.for "desc", class_ "textarea" ]
+            [ HH.text "Description:"
+            , HH.textarea
+              [ HP.id_ "desc"
+              , HP.value s.desc
+              , HE.onValueInput (HE.input OnDesc) ]
+            ]
+
+          , HH.label [ HP.for "toread", class_ "checkbox" ]
+            [ HH.input
+              [ HP.id_ "toread"
+              , HP.type_ HP.InputCheckbox
+              , HP.checked s.toRead
+              , HE.onChecked (HE.input OnToRead) ]
+            , HH.text "Read later" ]
+
+          , HH.label [ HP.for "private", class_ "checkbox" ]
+            [ HH.input
+              [ HP.id_ "private"
+              , HP.type_ HP.InputCheckbox
+              , HP.checked s.private
+              , HE.onChecked (HE.input OnPrivate) ]
+            , HH.text "Private" ]
+          ]
+          <>
+          guard (isJust s.time)
+          [ HH.button [ class_ "danger", HE.onClick (HE.input Delete) ]
+            [ HH.text "Delete" ]
+          ]
+          <>
+          [ HH.button [ class_ "primary", HE.onClick (HE.input Save) ]
+            [ HH.text "Save" ]
+          ]
         ]
+      ]
       where
-        renderStatus (Error s)   = HH.div [ class_ "error"  ] [ HH.text s ]
-        renderStatus (Message s) = HH.div [ class_ "status" ] [ HH.text s ]
+        renderStatus (Error s) = HH.div [ class_ "status danger"  ] [ HH.text s ]
+        renderStatus (Normal s) = HH.div [ class_ "status light" ] [ HH.text s ]
+        renderStatus (Success s) = HH.div [ class_ "status success" ] [ HH.text s ]
 
     eval :: Query ~> DSL m
     eval q = case q of
@@ -209,7 +212,7 @@ component =
       -- user interaction events
       Save e k -> k <$ do
         noBubble e
-        H.modify (message "Posting...")
+        H.modify (message "Saving...")
 
         s   <- H.gets unwrap
         res <- H.liftAff $ postsAdd s.url s.title (addOptions
@@ -220,44 +223,37 @@ component =
                                     , toRead   = Just s.toRead })
         eval (ApiPostAdd res k)
 
-      ApiPostGet res k -> k <$ do
-        case res of
-          Left (DecodeError msg) ->
-            H.modify (error ("Decode error " <> msg))
+      Delete e k -> k <$ do
+        noBubble e
+        H.modify (message "Deleting...")
 
-          Left (ServerError code) ->
-            H.modify (error ("Error code " <> show code))
+        url <- H.gets (_.url <<< unwrap)
+        res <- H.liftAff $ postsDelete url
+        eval (ApiPostDelete res k)
 
-          Right ps ->
-            case uncons ps of
-              Nothing ->
-                H.modify (message "New bookmark")
+      ApiPostGet res k -> k <$ unwrapResponse res \ps -> do
+        case uncons ps of
+          Nothing ->
+            H.modify (message "New bookmark")
 
-              Just {head,tail} -> do
-                _ <- H.query TagSlot $ H.action (TI.SetChosen head.tags)
+          Just {head,tail} -> do
+            _ <- H.query TagSlot $ H.action (TI.SetChosen head.tags)
 
-                let fmt = either id id <<< formatDateTime "MMM DD, YYYY"
-                H.modify (message ("First bookmarked " <> fmt head.time))
-                H.modify (state (_ { title   = head.description
-                                   , desc    = head.extended
-                                   , tags    = head.tags
-                                   , toRead  = head.toRead
-                                   , private = not head.shared
-                                   , time    = Just head.time }))
+            let fmt = either id id <<< formatDateTime "MMM DD, YYYY"
+            H.modify (message ("First bookmarked " <> fmt head.time))
+            H.modify (state (_ { title   = head.description
+                               , desc    = head.extended
+                               , tags    = head.tags
+                               , toRead  = head.toRead
+                               , private = not head.shared
+                               , time    = Just head.time }))
 
-      ApiPostAdd res k -> k <$ do
-        case res of
-          Left (DecodeError msg) ->
-            H.modify (error ("Decode error " <> msg))
+      ApiPostAdd res k -> k <$ unwrapResponse res \_ -> do
+        now <- extract <$> H.liftEff nowDateTime
+        H.modify (success "Saved" <<< state (_ { time = Just now }))
 
-          Left (ServerError code) ->
-            H.modify (error ("Error code " <> show code))
-
-          Right _ ->
-            H.modify (message "Saved")
-
-      ApiPostSuggest res k ->
-        pure k
+      ApiPostDelete res k -> k <$ unwrapResponse res \_ -> do
+        H.modify (success "Deleted" <<< state (_ { time = Nothing }))
 
       OnUrl x k ->     k <$ H.modify (state (_ { url = x }))
       OnTitle x k ->   k <$ H.modify (state (_ { title = x }))
@@ -273,6 +269,13 @@ component =
     receiver _ = Nothing
 
 
+unwrapResponse :: forall m a. Either Error a -> (a -> DSL m Unit) -> DSL m Unit
+unwrapResponse (Right a) f = f a
+unwrapResponse (Left e) _  =
+  case e of
+       DecodeError msg  -> H.modify (error ("Decode error " <> msg))
+       ServerError code -> H.modify (error ("Server error " <> show code))
+
 noBubble
   :: forall e m
    . MonadAff (dom :: DOM | e) m
@@ -286,11 +289,15 @@ state f = wrap <<< f <<< unwrap
 
 
 message :: forall m. String -> (State -> State)
-message s = state (_ { status = Just (Message s) })
+message s = state (_ { status = Just (Normal s) })
 
 
 error :: forall m. String -> (State -> State)
 error s = state (_ { status = Just (Error s) })
+
+
+success :: forall m. String -> (State -> State)
+success s = state (_ { status = Just (Success s) })
 
 
 class_ :: forall r i. String -> HP.IProp ("class" :: String | r) i

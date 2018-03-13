@@ -1,3 +1,26 @@
+
+
+.primary { color: #004085; background-color: #cce5ff; border-color: #b8daff; }
+.success { color: #155724; background-color: #d4edda; border-color: #c3e6cb; }
+.danger  { color: #721c24; background-color: #f8d7da; border-color: #f5c6cb; }
+.light   { color: #818182; background-color: #fefefe; border-color: #fdfdfe; }
+
+button.danger    { color: #ffffff; background-color: #dc3545; border-color: #dc3545; }
+button.primary   { color: #ffffff; background-color: #007bff; border-color: #007bff; }
+button.secondary { color: #ffffff; background-color: #6c757d; border-color: #6c757d; }
+
+button.danger:hover    { background-color: #c82333; border-color: #bd2130; }
+button.primary:hover   { background-color: #0069d9; border-color: #0062cc; }
+button.secondary:hover { background-color: #5a6268; border-color: #545b62; }
+
+button.danger:focus    { box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.5); }
+button.primary:focus   { box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.5); }
+button.secondary:focus { box-shadow: 0 0 0 0.2rem rgba(108, 117, 125, 0.5); }
+
+button.danger:disabled    { background-color: #dc3545; border-color: #dc3545; }
+button.primary:disabled   { background-color: #007bff; border-color: #007bff; }
+button.secondary:disabled { background-color: #6c757d; border-color: #6c757d; }
+
 label {
   display: block;
   font-size: 0.85rem;
@@ -30,7 +53,6 @@ label.select {
 input {
   border-radius: 0.25rem;
   border: 1px solid #ccc;
-  outline: none;
   display: inline-block;
   font-size: 1rem;
   margin: 0 0 0.75rem 0;
@@ -63,7 +85,6 @@ input[type="checkbox"] {
 textarea {
   border-radius: 0.25rem;
   border: 1px solid #ccc;
-  outline: none;
   display: block;
   font-size: 1rem;
   font-family: inherit;
@@ -86,12 +107,12 @@ button {
   -webkit-tap-highlight-color: transparent;
   background-color: white;
   border-radius: 0.25rem;
-  border: 1px solid #ccc;
+  border: 1px solid;
   cursor: pointer;
   display: inline-block;
   font-size: 1rem;
   margin: 0;
-  padding: 8px 14px 9px 14px;
+  padding: 6px 14px 7px 14px;
   text-align: center;
   user-select: none;
   vertical-align: bottom;

@@ -21,7 +21,8 @@
     "purescript-maps": "^3.6.0",
     "purescript-strings": "^3.5.0",
     "purescript-sequences": "^1.0.3",
-    "purescript-filterable": "^2.4.1"
+    "purescript-filterable": "^2.4.1",
+    "purescript-now": "^3.0.0"
   },
   "devDependencies": {
     "purescript-psci-support": "^3.0.0"

@@ -26,6 +26,7 @@ import Halogen.HTML.Events      as HE
 import Halogen.HTML.Properties  as HP
 
 import DOM                      (DOM)
+import DOM.HTML.HTMLElement     (setClassName) as H
 import DOM.Event.Event          as E
 import DOM.Event.Types          as ET
 import DOM.Event.KeyboardEvent  (key, metaKey, shiftKey, altKey)
@@ -108,7 +109,7 @@ component cfg =
     render :: State i e -> HTML i
     render (State s) =
       HH.div
-        [ HP.class_ (H.ClassName "tags") ]
+        [ HP.id_ "tags", HP.ref (H.RefLabel "tags") ]
         [ renderChosen s.chosen
         , HH.div_
             [ HH.input
@@ -171,6 +172,10 @@ component cfg =
                     options (_ { visible = true, waitToShow = Nothing }))
 
       OnBlur e k -> k <$ do
+        H.getHTMLElementRef (H.RefLabel "tags") >>= case _ of
+          Nothing -> pure unit
+          Just el -> H.liftEff (H.setClassName "" el)
+
         -- wait a tick for user to stop clicking before hiding suggestions
         o <- H.gets (unwrap <<< _.options <<< unwrap)
         w <- case o.waitToHide of
@@ -184,6 +189,10 @@ component cfg =
           H.raise =<< H.gets (OnChosen <<< _.chosen <<< unwrap)
 
       OnFocus e k -> k <$ do
+        H.getHTMLElementRef (H.RefLabel "tags") >>= case _ of
+          Nothing -> pure unit
+          Just el -> H.liftEff (H.setClassName "focus" el)
+
         -- if we were about to hide suggestions, don't
         o <- H.gets (unwrap <<< _.options <<< unwrap)
         _ <- case o.waitToHide of

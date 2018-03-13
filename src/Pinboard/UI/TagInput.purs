@@ -28,8 +28,7 @@ import Halogen.HTML.Properties  as HP
 import DOM                      (DOM)
 import DOM.Event.Event          as E
 import DOM.Event.Types          as ET
-import DOM.Event.FocusEvent     (FocusEvent)
-import DOM.Event.KeyboardEvent  (KeyboardEvent, key, metaKey, shiftKey, altKey)
+import DOM.Event.KeyboardEvent  (key, metaKey, shiftKey, altKey)
 
 import Pinboard.UI.Debounce     (Debouncer)
 import Pinboard.UI.Debounce     as D
@@ -41,7 +40,7 @@ type Input = Unit
 type Config i m =
   { suggest   :: Array i -> String -> m (Array i)
   , parse     :: String -> i
-  , render    :: i -> HTML
+  , render    :: i -> HTML i
   , hideDelay :: Milliseconds
   , showDelay :: Milliseconds }
 
@@ -60,21 +59,22 @@ newtype Options i e = Options
 derive instance newtypeState :: Newtype (State i e) _
 derive instance newtypeOptions :: Newtype (Options i e) _
 
-data Query k
+data Query i k
   = Init k
   | Exit k
-  | OnKey KeyboardEvent k
-  | OnBlur FocusEvent k
+  | OnKey ET.KeyboardEvent k
+  | OnBlur ET.FocusEvent k
   | OnInput String k
-  | OnFocus FocusEvent k
+  | OnFocus ET.FocusEvent k
   | Reject Int k
   | Choose Int k
+  | SetChosen (Array i) k
 
 data Output i
   = OnChosen (Array i)
 
-type HTML      = H.ComponentHTML Query
-type DSL i m e = H.ComponentDSL (State i e) Query (Output i) m
+type HTML i    = H.ComponentHTML (Query i)
+type DSL i m e = H.ComponentDSL (State i e) (Query i) (Output i) m
 
 -------------------------------------------------------------------------------
 
@@ -83,7 +83,7 @@ component
    . MonadAff (dom :: DOM, avar :: AVAR | e) m
   => Eq i
   => Config i m
-  -> H.Component HH.HTML Query Input (Output i) m
+  -> H.Component HH.HTML (Query i) Input (Output i) m
 component cfg =
   H.lifecycleComponent
   { initialState
@@ -94,7 +94,7 @@ component cfg =
   , finalizer:    Just (H.action Exit) }-- Maybe (f Unit)
   where
     initialState :: Input -> State i e
-    initialState _ =
+    initialState xs =
       State
       { buffer:   ""
       , chosen:   []
@@ -103,9 +103,9 @@ component cfg =
                   , options:    []
                   , hoverIdx:   Nothing
                   , waitToHide: Nothing
-                  , waitToShow: Nothing } }
+                  , waitToShow: Nothing }}
 
-    render :: State i e -> HTML
+    render :: State i e -> HTML i
     render (State s) =
       HH.div
         [ HP.class_ (H.ClassName "tags") ]
@@ -122,7 +122,7 @@ component cfg =
                 , HE.onValueInput (HE.input OnInput) ] ]
         , renderOptions s.options ]
       where
-        renderChosen :: Array i -> HTML
+        renderChosen :: Array i -> HTML i
         renderChosen [] = HH.text ""
         renderChosen xs =
           HH.ul [class_ "selected"] $ flip mapWithIndex xs \n x ->
@@ -130,7 +130,7 @@ component cfg =
               [ HE.onClick (HE.input_ (Reject n)) ]
               [ cfg.render x ]
 
-        renderOptions :: Options i e -> HTML
+        renderOptions :: Options i e -> HTML i
         renderOptions (Options { visible, options, hoverIdx })
           | not visible   = HH.text ""
           | null options  = HH.text ""
@@ -141,16 +141,18 @@ component cfg =
                 , class_ (if Just n == hoverIdx then "highlighted" else "") ]
                 [ cfg.render x ]
 
-    eval :: Query ~> DSL i m e
+    eval :: Query i ~> DSL i m e
     eval q = case q of
       Init k -> pure k
       Exit k -> pure k
 
-      Reject n k -> k <$
+      Reject n k -> k <$ do
         H.modify (rejectChosen n)
+        H.raise =<< H.gets (OnChosen <<< _.chosen <<< unwrap)
 
       Choose n k -> k <$ do
         H.modify (chooseOption n)
+        H.raise =<< H.gets (OnChosen <<< _.chosen <<< unwrap)
 
       OnInput v k -> k <$ do
         -- wait a tick for user to stop typing before computing suggestions
@@ -179,6 +181,7 @@ component cfg =
         H.fork $ D.whenQuiet w do
           H.modify (chooseBuffer cfg.parse <<<
                     options (_ { visible = false, options = [], waitToHide = Nothing }))
+          H.raise =<< H.gets (OnChosen <<< _.chosen <<< unwrap)
 
       OnFocus e k -> k <$ do
         -- if we were about to hide suggestions, don't
@@ -195,19 +198,22 @@ component cfg =
         case key e of
              "Backspace"
                | metaKey e -> H.modify resetState
-               | otherwise -> when (bufferIsBlank s) $
+               | otherwise -> when (bufferIsBlank s) $ do
                                 H.modify rejectLast
+                                H.raise =<< H.gets (OnChosen <<< _.chosen <<< unwrap)
 
              "Enter" -> do
                case o.hoverIdx of
                     Just n -> do
                       noBubble e
                       H.modify (chooseOption n)
+                      H.raise =<< H.gets (OnChosen <<< _.chosen <<< unwrap)
                     Nothing
                       | bufferIsBlank s -> pure unit
                       | otherwise       -> do
                         noBubble e
                         H.modify (chooseBuffer cfg.parse)
+                        H.raise =<< H.gets (OnChosen <<< _.chosen <<< unwrap)
 
              x | chooseKey x -> do
                noBubble e
@@ -241,9 +247,13 @@ component cfg =
 
              _ -> pure unit
 
-        where chooseKey = flip elem [",", ";", " "]
+      SetChosen xs k -> k <$ do
+        H.modify (state (_ { chosen = xs }))
 
-    receiver :: Input -> Maybe (Query Unit)
+      where chooseKey = flip elem [",", ";", " "]
+
+
+    receiver :: Input -> Maybe (Query i Unit)
     receiver _ = Nothing
 
 -------------------------------------------------------------------------------
@@ -251,7 +261,7 @@ component cfg =
 noBubble
   :: forall i e m
    . MonadAff (dom :: DOM, avar :: AVAR | e) m
-  => KeyboardEvent
+  => ET.KeyboardEvent
   -> DSL i m e Unit
 noBubble = H.liftEff <<< E.preventDefault <<< ET.keyboardEventToEvent
 
@@ -259,12 +269,15 @@ noBubble = H.liftEff <<< E.preventDefault <<< ET.keyboardEventToEvent
 state :: forall i e a. Newtype (State i e) a => (a -> a) -> (State i e -> State i e)
 state f = wrap <<< f <<< unwrap
 
+
 options :: forall i e a. Newtype (Options i e) a => (a -> a) -> (State i e -> State i e)
 options f (State s) = State (s { options = op s.options })
   where op = wrap <<< f <<< unwrap
 
+
 rejectChosen :: forall i e. Int -> State i e -> State i e
 rejectChosen k (State s) = State (s { chosen = fromMaybe [] (deleteAt k s.chosen) })
+
 
 chooseOption :: forall i e. Int -> State i e -> State i e
 chooseOption k (State s) = State (op s.options)
@@ -278,6 +291,7 @@ chooseOption k (State s) = State (op s.options)
                                     { visible  = false
                                     , hoverIdx = Nothing })}
 
+
 chooseBuffer :: forall i e. (String -> i) -> State i e -> State i e
 chooseBuffer f (State s)
   | s.buffer == "" = State s
@@ -290,6 +304,7 @@ chooseBuffer f (State s)
                                    , options  = []
                                    , hoverIdx = Nothing })}
 
+
 updateOptions :: forall i e. Eq i => Array i -> State i e -> State i e
 updateOptions newOptions = options op
   where
@@ -299,6 +314,7 @@ updateOptions newOptions = options op
            Just n_ -> let n = findIndex newOptions =<< o.options !! n_
                        in o { options = newOptions, hoverIdx = n }
 
+
 clearBuffer :: forall i e. State i e -> State i e
 clearBuffer (State s) = State (s { buffer  = ""
                                  , options = Options
@@ -307,6 +323,7 @@ clearBuffer (State s) = State (s { buffer  = ""
                                              , hoverIdx   : Nothing
                                              , waitToHide : Nothing
                                              , waitToShow : Nothing }})
+
 
 resetState :: forall i e. State i e -> State i e
 resetState _ = State { buffer  : ""
@@ -318,11 +335,14 @@ resetState _ = State { buffer  : ""
                                  , waitToHide  : Nothing
                                  , waitToShow  : Nothing }}
 
+
 bufferIsBlank :: forall i e. State i e -> Boolean
 bufferIsBlank (State s) = s.buffer == ""
 
+
 rejectLast :: forall i e. State i e -> State i e
 rejectLast (State s) = State (s { chosen = fromMaybe s.chosen (init s.chosen) })
+
 
 highlightPrev :: forall e x. State e x -> State e x
 highlightPrev = options op
@@ -334,6 +354,7 @@ highlightPrev = options op
              Nothing -> o { hoverIdx = maybeBool (_ >= 0) (length o.options - 1) }
              Just n  -> o { hoverIdx = maybeBool (_ >= 0) (n - 1) }
 
+
 highlightNext :: forall e x. State e x -> State e x
 highlightNext = options op
   where
@@ -344,8 +365,10 @@ highlightNext = options op
              Nothing -> o { hoverIdx = maybeBool (_ < length o.options) 0 }
              Just n  -> o { hoverIdx = maybeBool (_ < length o.options) (n + 1) }
 
+
 findIndex :: forall a. Eq a => Array a -> a -> Maybe Int
 findIndex xs x = fst <$> find ((x == _) <<< snd) (mapWithIndex Tuple xs)
+
 
 class_ :: forall r i. String -> HP.IProp ("class" :: String | r) i
 class_ s = HP.class_ (H.ClassName s)

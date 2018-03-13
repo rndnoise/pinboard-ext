@@ -2,6 +2,7 @@ module Pinboard.API.Decode where
 
 import Prelude
 
+import Data.Array               (filter)
 import Data.Either              (Either(..), note)
 import Data.Maybe               (Maybe(..))
 import Data.StrMap              (StrMap)
@@ -32,7 +33,7 @@ decodePosts name x = traverse decodePost =<< decodeArray name x
         decodePropWith  decodeDate   "time" o         <*>
         decodePropWith  decodeBoolean "toread" o      <*>
         decodePropWith  decodeBoolean "shared" o
-    decodeTags name' z = split (Pattern " ") <$> decodeString name' z
+    decodeTags name' z = filter (_ /= "") <<< split (Pattern " ") <$> decodeString name' z
 
 decodeObject :: Name -> Json -> Either Error (StrMap Json)
 decodeObject name x = explain name "not an object" (toObject x)

@@ -225,8 +225,11 @@ component cfg =
                H.modify clearBuffer
 
              "Tab"
-               | shiftKey e -> noBubble e *> H.modify highlightPrev
-               | otherwise  -> noBubble e *> H.modify highlightNext
+               | not (bufferIsBlank s) -> do
+                   noBubble e
+                   if (shiftKey e)
+                     then H.modify highlightPrev
+                     else H.modify highlightNext
 
              "ArrowLeft"
                | not shiftKey e &&

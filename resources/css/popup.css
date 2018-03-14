@@ -7,8 +7,22 @@ body
   line-height: 1.5;
   background-color: white; }
 
-div.main { margin: 0.5rem 1rem 1rem 1rem; }
+div.main { margin: 0.5rem 1rem; }
 label.checkbox { display: inline-block; }
+label.select { margin-bottom: 0.75rem; }
+
+div.multi .top
+{ z-index: 1;
+  width: 100%;
+  margin: 0;
+  padding: 0.5rem 1rem 0.5rem 1rem;
+  position: fixed;
+  top: 0; left: 0;
+  box-sizing: border-box;
+  border-bottom: 1px solid #999;
+  background-color: #f0f0f0; }
+
+.top input { background-color: #fff; }
 
 button
 { float: right;
@@ -21,6 +35,43 @@ button:active
   background-color: #117bf3; }
 
 .status
-{ padding: 0.5rem;
+{ padding: 5px;
+  font-size: 1rem; }
+
+.multi ul
+{ padding: 0;
+  margin: 115px 0 10px 0; }
+
+.multi li
+{ list-style: none;
+  margin: 0;
+  padding: 8px 1rem 10px 1rem;
+  border-bottom: 1px solid #ccc; }
+.multi li:hover
+{ color: #ffffff; background-color: #007bff; border-color: #007bff; }
+
+.multi li input[type="checkbox"]
+{ margin: 0.9rem 0 0 0;
+  float: left; }
+
+.multi li input.title
+{ margin: 0 0 0 10px;
   font-size: 1rem;
-  margin-bottom: 0.5rem; }
+  width: 80%;
+  border: none;
+  outline: none;
+  padding: 0.2rem 6px;
+  overflow: hidden; }
+
+.multi li div.url
+{ margin-left: 28px;
+  margin-right: 50px;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  overflow: hidden; }
+
+.multi li img
+{ float: right;
+  margin-top: 4px;
+  width: 32px;
+  height: 32px; }

@@ -1,60 +1,50 @@
-#tags {
-  width: 100%;
+#tags
+{ width: 100%;
   border: 1px solid #ccc;
-  overflow: hidden;
-}
+  overflow: hidden; }
 
-#tags.focus {
-  outline-color: rgb(59,153,252);
+#tags.focus
+{ outline-color: rgb(59,153,252);
   outline-offset: -2px;
   outline-style: auto;
-  outline-width: 5px;
-}
+  outline-width: 5px; }
 
 #tags > div { overflow: hidden; }
 
-#tags input {
-  width: 100%;
+#tags input
+{ width: 100%;
   margin: 0;
   border: none;
   outline: none;
   display: inline-block;
-  font-size: 1rem;
-}
+  font-size: 1rem; }
 
 #tags .matched { color: #000000; font-weight: bold; }
 #tags .unmatch { }
 
-ul.selected {
-  float: left;
+ul.selected
+{ float: left;
   margin: 0;
   padding: 0.35rem 0 0 0.75rem;
-  display: inline-block;
-}
+  display: inline-block; }
 
-ul.selected li {
-  display: inline-block;
+ul.selected li
+{ display: inline-block;
   margin: 0 2px;
   padding: 0 6px;
   color: white;
   font-size: 1rem;
   background-color: rgb(19,154,233);
-  border-radius: 3px;
-}
+  border-radius: 3px; }
 
-ul.selected li:hover {
-  cursor: pointer;
-  background-color: rgb(185,214,251);
-}
-
-ul.selected li:hover:after {
-  /*content: '⎮×';*/
-}
+ul.selected li:hover
+{ cursor: pointer;
+  background-color: rgb(185,214,251); }
 
 /*****************************************************************************/
 
-ul.suggested {
-  display: block;
+ul.suggested
+{ display: block;
   margin: 0;
   padding: 3px;
   width: 90%; /* ??? */
@@ -65,29 +55,23 @@ ul.suggested {
   z-index: 10;
   border: 1px solid #ccc;
   box-shadow: 1px 1px 3px rgba(0,0,110,0.33);
-  background-color: #f3f3f3;
-}
+  background-color: #f3f3f3; }
 
-ul.suggested li {
-  color: #666666;
-  cursor: pointer;
+ul.suggested li
+{ cursor: pointer;
   display: inline-block;
   padding: 2px 5px;
   margin: 0px;
+  color: #666;
   font-size: 0.9rem;
 
   border: 1px solid #f3f3f3;
-  border-radius: 3px;
-}
+  border-radius: 3px; }
 
-ul.suggested li.highlighted {
+ul.suggested li:hover,
+ul.suggested li.highlighted
+{ cursor: pointer;
+  color: #666;
   border: 1px solid #aaa;
-  background-color: white;
-}
-
-ul.suggested li:hover {
-  cursor: pointer;
-  border: 1px solid #aaa;
-  background-color: white;
-}
+  background-color: white; }
 

@@ -39,11 +39,12 @@ import Pinboard.UI.Debounce     as D
 type Input = Unit
 
 type Config i m =
-  { suggest   :: Array i -> String -> m (Array i)
-  , parse     :: String -> i
-  , render    :: i -> HTML i
-  , hideDelay :: Milliseconds
-  , showDelay :: Milliseconds }
+  { suggest      :: Array i -> String -> m (Array i)
+  , parse        :: String -> i
+  , renderChoice :: i -> HTML i
+  , renderOption :: i -> HTML i
+  , hideDelay    :: Milliseconds
+  , showDelay    :: Milliseconds }
 
 newtype State i e = State
   { buffer  :: String
@@ -129,7 +130,7 @@ component cfg =
           HH.ul [class_ "selected"] $ flip mapWithIndex xs \n x ->
             HH.li
               [ HE.onClick (HE.input_ (Reject n)) ]
-              [ cfg.render x ]
+              [ cfg.renderChoice x ]
 
         renderOptions :: Options i e -> HTML i
         renderOptions (Options { visible, options, hoverIdx })
@@ -140,7 +141,7 @@ component cfg =
               HH.li
                 [ HE.onClick (HE.input_ (Choose n))
                 , class_ (if Just n == hoverIdx then "highlighted" else "") ]
-                [ cfg.render x ]
+                [ cfg.renderOption x ]
 
     eval :: Query i ~> DSL i m e
     eval q = case q of

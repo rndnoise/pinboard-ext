@@ -1,6 +1,7 @@
 module Pinboard.UI.Complete
   ( Span(..)
   , Part(..)
+  , Result
   , parse
   , commonSubsequences
   , corpus
@@ -38,6 +39,7 @@ type Split = List Part
 data Part
   = S String  -- symbols
   | L String  -- letters
+derive instance eqPart :: Eq Part
 derive instance gPart :: Generic Part _
 instance showPart :: Show Part where show = genericShow
 
@@ -47,6 +49,7 @@ type Result = List Span
 data Span
   = M String  -- matched
   | U String  -- unmatched
+derive instance eqSpan :: Eq Span
 derive instance gSpan :: Generic Span _
 instance showSpan :: Show Span where show = genericShow
 
@@ -74,7 +77,7 @@ commonSubsequences ts_ =
     try q p =
       case execWriterT (sub q p) of
            xs | null xs   -> Nothing
-              | otherwise -> Just xs
+              | otherwise -> Just (map smooth xs)
 
     sub :: Split -> Split -> Search Result Unit
     sub x y = case T x y of

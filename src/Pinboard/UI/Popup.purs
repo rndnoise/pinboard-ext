@@ -1,23 +1,22 @@
 module Pinboard.UI.Popup where
 
 import Prelude
-import Data.Array               (head, uncons)
+import Data.Array               (head, uncons, elem, filter)
 import Data.Maybe               (Maybe(..), fromMaybe, isJust)
-import Data.Tuple               (fst)
+import Data.Tuple               (Tuple(..), fst, snd)
 import Data.DateTime            (DateTime)
 import Data.Either              (Either(..), either)
+import Data.List                (List(..), toUnfoldable)
 import Data.Newtype             (class Newtype, wrap, unwrap)
 import Data.Monoid              (guard)
+import Data.Sequence            (head) as S
 import Data.Time.Duration       (Milliseconds(..))
 import Data.Formatter.DateTime  (formatDateTime)
-import Data.Traversable         (traverse)
-import Control.Monad.Aff        (Aff)
 import Control.Monad.Aff.Class  (class MonadAff)
 import Control.Monad.Eff        (Eff)
 import Control.Monad.Eff.Now    (NOW, nowDateTime)
 import Control.Comonad          (extract)
 import Network.HTTP.Affjax      (AJAX)
-import DOM.HTML.HTMLElement     (focus) as H
 import Halogen                  as H
 import Halogen.HTML             as HH
 import Halogen.HTML.Events      as HE
@@ -26,8 +25,8 @@ import Halogen.VDom.Driver      as HV
 import Halogen.Aff              as HA
 
 import Chrome.FFI               (CHROME)
-import Chrome.Tabs              as CT
-import Chrome.Tabs.Tab          as CT
+import Chrome.Tabs              (query, queryOptions) as CT
+import Chrome.Tabs.Tab          (Tab, title, url) as CT
 import DOM                      (DOM)
 import DOM.Event.Event          as E
 import DOM.Event.Types          as ET
@@ -35,7 +34,7 @@ import Control.Monad.Aff.AVar   (AVAR)
 
 import Pinboard.UI.TagInput     as TI
 import Pinboard.UI.Complete     as CC
-import Pinboard.API             (Post, Suggestions, Error(..),
+import Pinboard.API             (Post, Error(..),
                                   postsGet, postsAdd, postsDelete, addOptions, getOptions)
 
 
@@ -48,15 +47,26 @@ main = HA.runHalogenAff do
   pure unit
 
 
--- |
-cfg :: forall m. Monad m => TI.Config String m
+-- | This needs to be defined outside `cfg` because we don't
+-- want to impose the Monad m constraint; accessing cfg.parse
+-- causes "no instance found" since m is ambiguous.
+cfgParse :: String -> Tuple String CC.Result
+cfgParse s = Tuple s Nil
+
+cfg :: forall m. Monad m => TI.Config (Tuple String CC.Result) m
 cfg =
-  { parse:      id
-  , render:     HH.text
-  , showDelay:  Milliseconds 150.0
-  , hideDelay:  Milliseconds 150.0
-  , suggest:    let f = CC.commonSubsequences CC.corpus
-                 in \xs x -> pure (map fst (f x)) }
+  { parse:        cfgParse
+  , renderChoice: HH.text <<< fst
+  , renderOption: HH.span_ <<< toUnfoldable <<< map fmt <<< snd
+  , showDelay:    Milliseconds 150.0
+  , hideDelay:    Milliseconds 150.0
+  , suggest:      let f = CC.commonSubsequences CC.corpus
+                   in \xs x -> pure (map fix (filter (dup xs) (f x))) }
+  where
+    dup xs (Tuple s _) = not (s `elem` (map fst xs))
+    fix (Tuple s rs) = Tuple s (fromMaybe Nil (S.head rs))
+    fmt (CC.M s) = HH.span [class_ "matched"] [HH.text s]
+    fmt (CC.U s) = HH.span [class_ "unmatch"] [HH.text s]
 
 -------------------------------------------------------------------------------
 
@@ -90,7 +100,7 @@ data Query k
   | ApiPostGet (Either Error (Array Post)) k
   | ApiPostAdd (Either Error Unit) k
   | ApiPostDelete (Either Error Unit) k
-  | FromTagWidget (TI.Output String) k
+  | FromTagWidget (TI.Output (Tuple String CC.Result)) k
 
 type Input = Maybe CT.Tab
   -- Maybe (Record (url :: Maybe String, title :: Maybe String))
@@ -101,8 +111,8 @@ data Slot = TagSlot
 derive instance eqSlot :: Eq Slot
 derive instance ordSlot :: Ord Slot
 
-type HTML m = H.ParentHTML Query (TI.Query String) Slot m
-type DSL m  = H.ParentDSL State Query (TI.Query String) Slot Output m
+type HTML m = H.ParentHTML Query (TI.Query (Tuple String CC.Result)) Slot m
+type DSL m  = H.ParentDSL State Query (TI.Query (Tuple String CC.Result)) Slot Output m
 
 -------------------------------------------------------------------------------
 
@@ -194,15 +204,14 @@ component =
         ]
       ]
       where
-        renderStatus (Error s) = HH.div [ class_ "status danger"  ] [ HH.text s ]
-        renderStatus (Normal s) = HH.div [ class_ "status light" ] [ HH.text s ]
-        renderStatus (Success s) = HH.div [ class_ "status success" ] [ HH.text s ]
+        renderStatus (Error x) = HH.div [ class_ "status danger"  ] [ HH.text x ]
+        renderStatus (Normal x) = HH.div [ class_ "status light" ] [ HH.text x ]
+        renderStatus (Success x) = HH.div [ class_ "status success" ] [ HH.text x ]
 
     eval :: Query ~> DSL m
     eval q = case q of
       Init k -> k <$ do
         H.modify (message "Checking...")
-        -- TODO remove #anchor
         url <- H.gets (_.url <<< unwrap)
         res <- H.liftAff $ postsGet (getOptions { url = Just url })
         eval (ApiPostGet res k)
@@ -237,7 +246,7 @@ component =
             H.modify (message "New bookmark")
 
           Just {head,tail} -> do
-            _ <- H.query TagSlot $ H.action (TI.SetChosen head.tags)
+            _ <- H.query TagSlot $ H.action (TI.SetChosen (map (cfgParse) head.tags))
 
             let fmt = either id id <<< formatDateTime "MMM DD, YYYY"
             H.modify (message ("First bookmarked " <> fmt head.time))
@@ -263,7 +272,7 @@ component =
 
       FromTagWidget o k -> k <$
         case o of
-          TI.OnChosen x -> H.modify (state (_ { tags = x }))
+          TI.OnChosen x -> H.modify (state (_ { tags = map fst x }))
 
     receiver :: Input -> Maybe (Query Unit)
     receiver _ = Nothing
@@ -288,15 +297,15 @@ state :: forall a. Newtype State a => (a -> a) -> (State -> State)
 state f = wrap <<< f <<< unwrap
 
 
-message :: forall m. String -> (State -> State)
+message :: String -> (State -> State)
 message s = state (_ { status = Just (Normal s) })
 
 
-error :: forall m. String -> (State -> State)
+error :: String -> (State -> State)
 error s = state (_ { status = Just (Error s) })
 
 
-success :: forall m. String -> (State -> State)
+success :: String -> (State -> State)
 success s = state (_ { status = Just (Success s) })
 
 

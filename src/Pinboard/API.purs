@@ -17,7 +17,6 @@ module Pinboard.API
   , module Pinboard.API.Types
   ) where
 
-import Debug.Trace          (trace)
 import Prelude
 import Control.Monad.Aff    (Aff)
 import Data.Argonaut.Core   (Json, fromString)

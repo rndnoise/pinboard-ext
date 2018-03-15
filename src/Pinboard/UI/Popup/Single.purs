@@ -1,19 +1,14 @@
 module Pinboard.UI.Popup.Single where
 
 import Prelude
-import Data.Array               (head, uncons, elem, filter)
+import Data.Array               (uncons)
 import Data.Maybe               (Maybe(..), fromMaybe, isJust)
-import Data.Tuple               (Tuple(..), fst, snd)
 import Data.DateTime            (DateTime)
 import Data.Either              (Either(..), either)
-import Data.List                (List(..), toUnfoldable)
 import Data.Newtype             (class Newtype, wrap, unwrap)
 import Data.Monoid              (guard)
-import Data.Sequence            (head) as S
-import Data.Time.Duration       (Milliseconds(..))
 import Data.Formatter.DateTime  (formatDateTime)
 import Control.Monad.Aff.Class  (class MonadAff)
-import Control.Monad.Eff        (Eff)
 import Control.Monad.Eff.Now    (NOW, nowDateTime)
 import Control.Comonad          (extract)
 import Network.HTTP.Affjax      (AJAX)
@@ -24,49 +19,13 @@ import Halogen                  as H
 import Halogen.HTML             as HH
 import Halogen.HTML.Events      as HE
 import Halogen.HTML.Properties  as HP
-import Halogen.VDom.Driver      as HV
-import Halogen.Aff              as HA
 
-import Chrome.FFI               (CHROME)
-import Chrome.Tabs              (query, queryOptions) as CT
 import Chrome.Tabs.Tab          (Tab, title, url) as CT
 import Control.Monad.Aff.AVar   (AVAR)
 
+import Pinboard.UI.HTML         (class_)
 import Pinboard.UI.TagInput     as TI
-import Pinboard.UI.Complete     as CC
-import Pinboard.API             (Post, Error(..),
-                                  postsGet, postsAdd, postsDelete, addOptions, getOptions)
-
-
--- | This is executed when the user clicks the Pinboard toolbar icon
-main :: Eff (HA.HalogenEffects (ajax :: AJAX, chrome :: CHROME, now :: NOW)) Unit
-main = HA.runHalogenAff do
-  body <- HA.awaitBody
-  tabs <- CT.query (CT.queryOptions { currentWindow = Just true, active = Just true })
-  _    <- HV.runUI component (head tabs) body
-  pure unit
-
-
--- | This needs to be defined outside `cfg` because we don't
--- want to impose the Monad m constraint; accessing cfg.parse
--- causes "no instance found" since m is ambiguous.
-cfgParse :: String -> Tuple String CC.Result
-cfgParse s = Tuple s Nil
-
-cfg :: forall m. Monad m => TI.Config (Tuple String CC.Result) m
-cfg =
-  { parse:        cfgParse
-  , renderChoice: HH.text <<< fst
-  , renderOption: HH.span_ <<< toUnfoldable <<< map fmt <<< snd
-  , showDelay:    Milliseconds 150.0
-  , hideDelay:    Milliseconds 150.0
-  , suggest:      let f = CC.commonSubsequences CC.corpus
-                   in \xs x -> pure (map fix (filter (dup xs) (f x))) }
-  where
-    dup xs (Tuple s _) = not (s `elem` (map fst xs))
-    fix (Tuple s rs) = Tuple s (fromMaybe Nil (S.head rs))
-    fmt (CC.M s) = HH.span [ class_ "matched "] [HH.text s]
-    fmt (CC.U s) = HH.span [ class_ "unmatch "] [HH.text s]
+import Pinboard.API             (Post, Error(..), postsGet, postsAdd, postsDelete, addOptions, getOptions)
 
 -------------------------------------------------------------------------------
 
@@ -87,9 +46,8 @@ data Status
   | Normal String
   | Success String
 
-data Query k
+data Query i k
   = Init k
-  | Exit k
   | OnUrl String k
   | OnTitle String k
   | OnDesc String k
@@ -100,34 +58,34 @@ data Query k
   | ApiPostGet (Either Error (Array Post)) k
   | ApiPostAdd (Either Error Unit) k
   | ApiPostDelete (Either Error Unit) k
-  | FromTagWidget (TI.Output (Tuple String CC.Result)) k
+  | FromTagInput (TI.Output i) k
 
-type Input = Maybe CT.Tab
-  -- Maybe (Record (url :: Maybe String, title :: Maybe String))
-
+type Input  = Maybe CT.Tab
 type Output = Void
 
 data Slot = TagSlot
-derive instance eqSlot :: Eq Slot
+derive instance eqSlot  :: Eq Slot
 derive instance ordSlot :: Ord Slot
 
-type HTML m = H.ParentHTML Query (TI.Query (Tuple String CC.Result)) Slot m
-type DSL m  = H.ParentDSL State Query (TI.Query (Tuple String CC.Result)) Slot Output m
+type HTML i m = H.ParentHTML (Query i) (TI.Query i) Slot m
+type DSL i m  = H.ParentDSL State (Query i) (TI.Query i) Slot Output m
 
 -------------------------------------------------------------------------------
 
 component
-  :: forall e m
-   . MonadAff (dom :: DOM, avar :: AVAR, ajax :: AJAX, now :: NOW | e) m
-  => H.Component HH.HTML Query Input Output m
-component =
-  H.lifecycleParentComponent            -- ComponentSpec h s f i o m
-  { initialState                        -- i -> s
-  , render                              -- s -> h Void (f Unit)
-  , eval                                -- f ~> (ComponentDSL s f o m)
-  , receiver                            -- i -> Maybe (f Unit)
-  , initializer:  Just (H.action Init)  -- Maybe (f Unit)
-  , finalizer:    Just (H.action Exit) }-- Maybe (f Unit)
+  :: forall i e m
+   . MonadAff (ajax :: AJAX, avar :: AVAR, dom :: DOM, now :: NOW | e) m
+  => Eq i
+  => TI.Config i m
+  -> H.Component HH.HTML (Query i) Input Output m
+component cfg =
+  H.lifecycleParentComponent
+  { initialState
+  , render
+  , eval
+  , receiver:    const Nothing
+  , finalizer:   Nothing
+  , initializer: Just (H.action Init) }
   where
     initialState :: Input -> State
     initialState t = State
@@ -140,10 +98,11 @@ component =
       , time        : Nothing
       , status      : Nothing }
 
-    render :: State -> HTML m
+    render :: State -> HTML i m
     render (State s) =
-      HH.div_
-      [ HH.div [ class_ "main" ]
+      HH.div [ HP.id_ "single" ]
+      [ fromMaybe (HH.text "") (map renderStatus s.status)
+      , HH.div [ class_ "single" ]
         [ HH.form_ $
           [ HH.label [ HP.for "url", class_ "text" ]
             [ HH.text "URL:"
@@ -165,7 +124,7 @@ component =
 
           , HH.label [ HP.for "tags", class_ "select" ]
             [ HH.text "Tags:"
-            , HH.slot TagSlot (TI.component cfg) unit (HE.input FromTagWidget) ]
+            , HH.slot TagSlot (TI.component cfg) unit (HE.input FromTagInput) ]
 
           , HH.label [ HP.for "desc", class_ "textarea" ]
             [ HH.text "Description:"
@@ -201,23 +160,19 @@ component =
             [ HH.text "Save" ]
           ]
         ]
-
-      , fromMaybe (HH.text "") (map renderStatus s.status)
       ]
       where
         renderStatus (Error x) = HH.div [ class_ "status danger"  ] [ HH.text x ]
         renderStatus (Normal x) = HH.div [ class_ "status light" ] [ HH.text x ]
         renderStatus (Success x) = HH.div [ class_ "status success" ] [ HH.text x ]
 
-    eval :: Query ~> DSL m
+    eval :: Query i ~> DSL i m
     eval q = case q of
       Init k -> k <$ do
         H.modify (message "Checking...")
         url <- H.gets (_.url <<< unwrap)
         res <- H.liftAff $ postsGet (getOptions { url = Just url })
         eval (ApiPostGet res k)
-
-      Exit k -> pure k
 
       -- user interaction events
       Save e k -> k <$ do
@@ -247,7 +202,7 @@ component =
             H.modify (message "New bookmark")
 
           Just {head,tail} -> do
-            _ <- H.query TagSlot $ H.action (TI.SetChosen (map (cfgParse) head.tags))
+            _ <- H.query TagSlot $ H.action (TI.SetChosen (map (cfg.parse) head.tags))
 
             let fmt = either id id <<< formatDateTime "MMM DD, YYYY"
             H.modify (message ("First bookmarked " <> fmt head.time))
@@ -266,20 +221,17 @@ component =
         H.modify (success "Deleted" <<< state (_ { time = Nothing }))
 
       OnUrl x k ->     k <$ H.modify (state (_ { url = x }))
-      OnTitle x k ->   k <$ H.modify (state (_ { title = x }))
       OnDesc x k ->    k <$ H.modify (state (_ { desc = x }))
+      OnTitle x k ->   k <$ H.modify (state (_ { title = x }))
       OnToRead x k ->  k <$ H.modify (state (_ { toRead = x }))
       OnPrivate x k -> k <$ H.modify (state (_ { private = x }))
 
-      FromTagWidget o k -> k <$
+      FromTagInput o k -> k <$
         case o of
-          TI.OnChosen x -> H.modify (state (_ { tags = map fst x }))
-
-    receiver :: Input -> Maybe (Query Unit)
-    receiver _ = Nothing
+          TI.OnChosen x -> H.modify (state (_ { tags = map cfg.renderText x }))
 
 
-unwrapResponse :: forall m a. Either Error a -> (a -> DSL m Unit) -> DSL m Unit
+unwrapResponse :: forall i m a. Either Error a -> (a -> DSL i m Unit) -> DSL i m Unit
 unwrapResponse (Right a) f = f a
 unwrapResponse (Left e) _  =
   case e of
@@ -287,10 +239,10 @@ unwrapResponse (Left e) _  =
        ServerError code -> H.modify (error ("Server error " <> show code))
 
 noBubble
-  :: forall e m
+  :: forall e i m
    . MonadAff (dom :: DOM | e) m
   => ET.MouseEvent
-  -> DSL m Unit
+  -> DSL i m Unit
 noBubble = H.liftEff <<< E.preventDefault <<< ET.mouseEventToEvent
 
 
@@ -308,7 +260,3 @@ error s = state (_ { status = Just (Error s) })
 
 success :: String -> (State -> State)
 success s = state (_ { status = Just (Success s) })
-
-
-class_ :: forall r i. String -> HP.IProp ("class" :: String | r) i
-class_ s = HP.class_ (H.ClassName s)

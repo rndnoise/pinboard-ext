@@ -2,7 +2,7 @@
 set -e
 set -x
 
-OUT=dist
+OUT=disto
 
 bower install
 
@@ -17,7 +17,7 @@ cp -R resources/html/* $OUT
 cp resources/manifest.json $OUT
 
 if [ ! -e $OUT/popup.js ] || [ $(find src -newer $OUT/popup.js -name '*.purs' | wc -l) -gt 0 ]; then
-  pulp build --jobs 2 --main Pinboard.UI.Popup.Single --to $OUT/popup.js #2>/dev/null
+  pulp build --jobs 2 --main Pinboard.UI.Popup --to $OUT/popup.js #2>/dev/null
 fi
 
 if [ ! -e $OUT/options.js ] || [ $(find src -newer $OUT/options.js -name '*.purs' | wc -l) -gt 0 ]; then

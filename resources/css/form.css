@@ -1,7 +1,7 @@
 .primary { color: #004085; background-color: #cce5ff; border-color: #b8daff; }
 .success { color: #155724; background-color: #d4edda; border-color: #c3e6cb; }
 .danger  { color: #721c24; background-color: #f8d7da; border-color: #f5c6cb; }
-.light   { color: #818182; background-color: #fefefe; border-color: #fdfdfe; }
+.light   { background-color: #f0f0f0; color: #000000; border-color: #999999; }
 
 button.danger    { color: #ffffff; background-color: #dc3545; border-color: #dc3545; }
 button.primary   { color: #ffffff; background-color: #007bff; border-color: #007bff; }
@@ -24,17 +24,12 @@ label
   font-size: 0.85rem;
   margin: 0 0 0.05rem 0; }
 
+label.radio,
 label.checkbox
 { cursor: pointer;
   font-size: 1rem;
-  margin: 0.5rem 1rem 0 0;
-  padding-left: 1.5rem; }
-
-label.radio
-{ cursor: pointer;
-  font-size: 1rem;
-  margin: 0.5rem 1rem 0 0;
-  padding-left: 1.5rem; }
+  margin: 0.3rem 1rem 0 0;
+  padding-left: 1.8rem; }
 
 label.text { }
 
@@ -59,7 +54,6 @@ input[type="radio"]
 { margin: -2px 0.4rem 0 -1.5rem;
   vertical-align: middle;
   width: auto;
-  height: 1rem;
   -o-transform: scale(1.25);
   -moz-transform: scale(1.25);
   -webkit-transform: scale(1.25); }
@@ -68,7 +62,6 @@ input[type="checkbox"]
 { margin: -2px 0.4rem 0 -1.5rem;
   vertical-align: middle;
   width: auto;
-  height: 1rem;
   -o-transform: scale(1.25);
   -moz-transform: scale(1.25);
   -webkit-transform: scale(1.25); }

@@ -12,7 +12,7 @@ import Data.List                (List(..), (:), fromFoldable, uncons, zipWith)
 import Data.Array               (catMaybes)
 import Data.Either              (fromRight)
 import Data.Maybe               (Maybe(..), fromMaybe)
-import Data.Tuple               (Tuple(..), fst)
+import Data.Tuple               (Tuple(..))
 import Data.Char                (toUpper)
 import Data.Sequence            (Seq, null)
 import Data.String              (singleton, drop)
@@ -93,7 +93,6 @@ commonSubsequences ts_ =
 
         consume :: Split -> Search Result Unit
         consume Nil             = pure unit
-        consume (Cons (S b) bs) = log (U b) *> consume bs
         consume (Cons (S b) bs) = log (U b) *> consume bs
         consume (Cons (L b) bs) = log (U b) *> consume bs
 

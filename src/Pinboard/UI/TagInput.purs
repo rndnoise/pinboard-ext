@@ -26,7 +26,7 @@ import Halogen.HTML.Events      as HE
 import Halogen.HTML.Properties  as HP
 
 import DOM                      (DOM)
-import DOM.HTML.HTMLElement     (setClassName) as H
+import DOM.HTML.HTMLElement     (setClassName)
 import DOM.Event.Event          as E
 import DOM.Event.Types          as ET
 import DOM.Event.KeyboardEvent  (key, metaKey, shiftKey, altKey)
@@ -41,6 +41,7 @@ type Input = Unit
 type Config i m =
   { suggest      :: Array i -> String -> m (Array i)
   , parse        :: String -> i
+  , renderText   :: i -> String
   , renderChoice :: i -> HTML i
   , renderOption :: i -> HTML i
   , hideDelay    :: Milliseconds
@@ -62,9 +63,7 @@ derive instance newtypeState :: Newtype (State i e) _
 derive instance newtypeOptions :: Newtype (Options i e) _
 
 data Query i k
-  = Init k
-  | Exit k
-  | OnKey ET.KeyboardEvent k
+  = OnKey ET.KeyboardEvent k
   | OnBlur ET.FocusEvent k
   | OnInput String k
   | OnFocus ET.FocusEvent k
@@ -87,13 +86,11 @@ component
   => Config i m
   -> H.Component HH.HTML (Query i) Input (Output i) m
 component cfg =
-  H.lifecycleComponent
+  H.component
   { initialState
   , render
   , eval
-  , receiver
-  , initializer:  Just (H.action Init)  -- Maybe (f Unit)
-  , finalizer:    Just (H.action Exit) }-- Maybe (f Unit)
+  , receiver: const Nothing }
   where
     initialState :: Input -> State i e
     initialState xs =
@@ -145,9 +142,6 @@ component cfg =
 
     eval :: Query i ~> DSL i m e
     eval q = case q of
-      Init k -> pure k
-      Exit k -> pure k
-
       Reject n k -> k <$ do
         H.modify (rejectChosen n)
         H.raise =<< H.gets (OnChosen <<< _.chosen <<< unwrap)
@@ -175,7 +169,7 @@ component cfg =
       OnBlur e k -> k <$ do
         H.getHTMLElementRef (H.RefLabel "tags") >>= case _ of
           Nothing -> pure unit
-          Just el -> H.liftEff (H.setClassName "" el)
+          Just el -> H.liftEff (setClassName "" el)
 
         -- wait a tick for user to stop clicking before hiding suggestions
         o <- H.gets (unwrap <<< _.options <<< unwrap)
@@ -192,7 +186,7 @@ component cfg =
       OnFocus e k -> k <$ do
         H.getHTMLElementRef (H.RefLabel "tags") >>= case _ of
           Nothing -> pure unit
-          Just el -> H.liftEff (H.setClassName "focus" el)
+          Just el -> H.liftEff (setClassName "focus" el)
 
         -- if we were about to hide suggestions, don't
         o <- H.gets (unwrap <<< _.options <<< unwrap)
@@ -264,10 +258,6 @@ component cfg =
         H.modify (state (_ { chosen = xs }))
 
       where chooseKey = flip elem [",", ";", " "]
-
-
-    receiver :: Input -> Maybe (Query i Unit)
-    receiver _ = Nothing
 
 -------------------------------------------------------------------------------
 

@@ -1,13 +1,15 @@
 module Halogen.SVG.Indexed where
 
-type SVG =
+import DOM.HTML.Indexed (Interactive)
+
+type SVG = Interactive
   ( "class" :: String
   , height :: Int
   , width :: Int
   , viewBox :: String
   , version :: String )
 
-type SVGpath =
+type SVGpath = Interactive
   ( d :: String
   , "fill-rule" :: String
   , strokeWidth :: Number

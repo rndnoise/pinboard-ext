@@ -81,52 +81,52 @@ component cfg =
     render :: State -> HTML i m
     render (State s) =
       HH.form [ class_ "multi" ]
-      [ HH.div [ class_ "top" ]
-          [ HH.label [ HP.for "tags", class_ "select" ]
-            [ HH.text "Tags:"
-            , HH.slot TagSlot (TI.component cfg) unit (HE.input FromTagWidget) ]
+        [ HH.div [ class_ "top" ]
+            [ HH.label [ HP.for "tags", class_ "select" ]
+              [ HH.text "Tags:"
+              , HH.slot TagSlot (TI.component cfg) unit (HE.input FromTagWidget) ]
 
-          , HH.label [ HP.for "toread", class_ "checkbox" ]
-            [ HH.input
-              [ HP.id_ "toread"
-              , HP.type_ HP.InputCheckbox
-              , HP.checked true
-              , HE.onChecked (HE.input OnToRead) ]
-            , HH.text "Read later" ]
-          , HH.label [ HP.for "private", class_ "checkbox" ]
-            [ HH.input
-              [ HP.id_ "private"
-              , HP.type_ HP.InputCheckbox
-              , HP.checked true
-              , HE.onChecked (HE.input OnPrivate) ]
-            , HH.text "Private" ]
-          , HH.label [ HP.for "replace", class_ "checkbox" ]
-            [ HH.input
-              [ HP.id_ "replace"
-              , HP.type_ HP.InputCheckbox
-              , HP.checked true
-              , HE.onChecked (HE.input OnReplace) ]
-            , HH.text "Replace" ]
-
-          , HH.button [ class_ "primary", HE.onClick (HE.input Save) ]
-            [ HH.text "Save" ] ]
-
-      , HH.ul_ $ flip mapWithIndex s.tabs \n tab ->
-          HH.li_
-            [ HH.label [ HP.for ("t" <> show n) ]
+            , HH.label [ HP.for "toread", class_ "checkbox" ]
               [ HH.input
-                [ HP.id_ ("t" <> show n)
+                [ HP.id_ "toread"
                 , HP.type_ HP.InputCheckbox
                 , HP.checked true
-                , HE.onChecked (HE.input (OnChoose n)) ]
-              , HH.img [ HP.src (fromMaybe "" (CT.favIconUrl tab)) ]
-              , HH.input
-                [ class_ "title"
-                , HP.type_ HP.InputText
-                , HP.value (fromMaybe "" (CT.title tab))
-                , HE.onValueInput (HE.input (OnTitle n)) ]
-              , HH.div [ class_ "url"   ] [ HH.text (fromMaybe "" (CT.url tab)) ] ] ]
-      ]
+                , HE.onChecked (HE.input OnToRead) ]
+              , HH.text "Read later" ]
+            , HH.label [ HP.for "private", class_ "checkbox" ]
+              [ HH.input
+                [ HP.id_ "private"
+                , HP.type_ HP.InputCheckbox
+                , HP.checked true
+                , HE.onChecked (HE.input OnPrivate) ]
+              , HH.text "Private" ]
+            , HH.label [ HP.for "replace", class_ "checkbox" ]
+              [ HH.input
+                [ HP.id_ "replace"
+                , HP.type_ HP.InputCheckbox
+                , HP.checked true
+                , HE.onChecked (HE.input OnReplace) ]
+              , HH.text "Replace" ]
+
+            , HH.button [ class_ "primary", HE.onClick (HE.input Save) ]
+              [ HH.text "Save" ] ]
+
+        , HH.ul_ $ flip mapWithIndex s.tabs \n tab ->
+            HH.li_
+              [ HH.label [ HP.for ("t" <> show n) ]
+                [ HH.input
+                  [ HP.id_ ("t" <> show n)
+                  , HP.type_ HP.InputCheckbox
+                  , HP.checked true
+                  , HE.onChecked (HE.input (OnChoose n)) ]
+                , HH.img [ HP.src (fromMaybe "" (CT.favIconUrl tab)) ]
+                , HH.input
+                  [ class_ "title"
+                  , HP.type_ HP.InputText
+                  , HP.value (fromMaybe "" (CT.title tab))
+                  , HE.onValueInput (HE.input (OnTitle n)) ]
+                , HH.div [ class_ "url"   ] [ HH.text (fromMaybe "" (CT.url tab)) ] ] ]
+        ]
 
     eval :: Query i ~> DSL i m
     eval q = case q of

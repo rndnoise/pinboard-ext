@@ -15,10 +15,10 @@ import Halogen.HTML             as HH
 import Halogen.HTML.Events      as HE
 import Halogen.HTML.Properties  as HP
 
-import Chrome.Tabs.Tab          as CT
-import Pinboard.API             (Error)
-import Pinboard.UI.HTML         (class_)
-import Pinboard.UI.TagInput     as TI
+import Chrome.Tabs.Tab                as CT
+import Pinboard.API                   (Error)
+import Pinboard.UI.Internal.HTML      (class_)
+import Pinboard.UI.Component.TagInput as TI
 
 -------------------------------------------------------------------------------
 
@@ -65,8 +65,9 @@ component
    . MonadAff (ajax :: AJAX, avar :: AVAR, dom :: DOM | e) m
   => Eq i
   => TI.Config i m
+  -> (i -> String)
   -> H.Component HH.HTML (Query i) Input Output m
-component cfg =
+component cfg encodeTag =
   H.parentComponent
   { initialState
   , render

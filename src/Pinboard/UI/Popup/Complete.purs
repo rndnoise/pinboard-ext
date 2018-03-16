@@ -1,4 +1,4 @@
-module Pinboard.UI.Complete
+module Pinboard.UI.Popup.Complete
   ( Span(..)
   , Part(..)
   , Result
@@ -37,8 +37,11 @@ data T a = T a a
 -- |
 type Split = List Part
 data Part
-  = S String  -- symbols
-  | L String  -- letters
+  = S String
+    -- ^ Sequence of symbols
+  | L String
+    -- ^ Sequence of non-symbols
+
 derive instance eqPart :: Eq Part
 derive instance gPart :: Generic Part _
 instance showPart :: Show Part where show = genericShow
@@ -47,25 +50,14 @@ instance showPart :: Show Part where show = genericShow
 -- |
 type Result = List Span
 data Span
-  = M String  -- matched
-  | U String  -- unmatched
+  = M String
+    -- ^ Sequence of characters that matched the query
+  | U String
+    -- ^ Sequence of characters that do not match the query
+
 derive instance eqSpan :: Eq Span
 derive instance gSpan :: Generic Span _
 instance showSpan :: Show Span where show = genericShow
-
-
--- |
-smooth :: Result -> Result
-smooth xs = op xs
-  where
-    op Nil                           = Nil
-    op (Cons (M a) (Cons (M b) cs))  = op (M (a <> b) : cs)
-    op (Cons (U a) (Cons (U b) cs))  = op (U (a <> b) : cs)
-    op (Cons (U a) (Cons (M "") cs)) = op (U a : cs)
-    op (Cons (M a) (Cons (U "") cs)) = op (M a : cs)
-    op (Cons (M "") bs)              = op bs
-    op (Cons (U "") bs)              = op bs
-    op (Cons a bs)                   = a : op bs
 
 -- |
 commonSubsequences :: Array String -> String -> Array (Tuple String (Seq Result))
@@ -108,6 +100,20 @@ commonSubsequences ts_ =
            in no <|> if toUpper a0 == toUpper b0
                         then log (M (singleton b0)) *> letters as bs xx
                         else empty
+
+    -- | Merge consecutive spans of the same type and remove
+    -- | spans that only have an empty string
+    smooth :: Result -> Result
+    smooth xs = op xs
+      where
+        op Nil                           = Nil
+        op (Cons (M a) (Cons (M b) cs))  = op (M (a <> b) : cs)
+        op (Cons (U a) (Cons (U b) cs))  = op (U (a <> b) : cs)
+        op (Cons (U a) (Cons (M "") cs)) = op (U a : cs)
+        op (Cons (M a) (Cons (U "") cs)) = op (M a : cs)
+        op (Cons (M "") bs)              = op bs
+        op (Cons (U "") bs)              = op bs
+        op (Cons a bs)                   = a : op bs
 
 -- |
 parse :: String -> Split

@@ -25,15 +25,15 @@ import Halogen.Component.ChildPath    as CP
 import Data.Either.Nested             (Either2)
 import Data.Functor.Coproduct.Nested  (Coproduct2)
 
-import Chrome.FFI               (CHROME)
-import Chrome.Tabs              (Tab, query, queryOptions) as CT
-import Chrome.Tabs.Tab          (active) as CT
-import Pinboard.UI.HTML         (class_, classes)
-import Pinboard.UI.Icons        as PI
-import Pinboard.UI.Complete     as CC
-import Pinboard.UI.TagInput     as TI
-import Pinboard.UI.Popup.Multi  as PM
-import Pinboard.UI.Popup.Single as PS
+import Chrome.FFI                     (CHROME)
+import Chrome.Tabs                    (Tab, query, queryOptions) as CT
+import Chrome.Tabs.Tab                (active) as CT
+import Pinboard.UI.Internal.HTML      (class_, classes)
+import Pinboard.UI.Internal.Icons     as PI
+import Pinboard.UI.Component.TagInput as TI
+import Pinboard.UI.Popup.Complete     as CC
+import Pinboard.UI.Popup.Multi        as PM
+import Pinboard.UI.Popup.Single       as PS
 
 -------------------------------------------------------------------------------
 
@@ -42,7 +42,6 @@ cfg =
   { parse:        flip Tuple Nil
   , renderChoice: HH.text <<< fst
   , renderOption: HH.span_ <<< toUnfoldable <<< map fmt <<< snd
-  , renderText:   fst
   , showDelay:    Milliseconds 150.0
   , hideDelay:    Milliseconds 150.0
   , suggest:      let f = CC.commonSubsequences CC.corpus
@@ -114,10 +113,10 @@ component =
           [ PI.single [] ]
       , HH.div
           [ classes [ toggle multi, "multi" ] ]
-          [ HH.slot' CP.cp1 unit (PM.component cfg) s.allTabs absurd ]
+          [ HH.slot' CP.cp1 unit (PM.component cfg fst) s.allTabs absurd ]
       , HH.div
           [ classes [ toggle single, "single" ] ]
-          [ HH.slot' CP.cp2 unit (PS.component cfg) s.oneTab absurd ] ]
+          [ HH.slot' CP.cp2 unit (PS.component cfg fst) s.oneTab absurd ] ]
       where
         toggle x = if s.active == x then "active" else "dormant"
 

@@ -1,4 +1,4 @@
-module Pinboard.UI.HTML where
+module Pinboard.UI.Internal.HTML where
 
 import Prelude                  ((<<<), map)
 import Halogen.HTML             as H

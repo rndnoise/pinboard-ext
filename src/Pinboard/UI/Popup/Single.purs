@@ -23,9 +23,9 @@ import Halogen.HTML.Properties  as HP
 import Chrome.Tabs.Tab          (Tab, title, url) as CT
 import Control.Monad.Aff.AVar   (AVAR)
 
-import Pinboard.UI.HTML         (class_)
-import Pinboard.UI.TagInput     as TI
-import Pinboard.API             (Post, Error(..), postsGet, postsAdd, postsDelete, addOptions, getOptions)
+import Pinboard.API                   (Post, Error(..), postsGet, postsAdd, postsDelete, addOptions, getOptions)
+import Pinboard.UI.Internal.HTML      (class_)
+import Pinboard.UI.Component.TagInput as TI
 
 -------------------------------------------------------------------------------
 
@@ -77,8 +77,9 @@ component
    . MonadAff (ajax :: AJAX, avar :: AVAR, dom :: DOM, now :: NOW | e) m
   => Eq i
   => TI.Config i m
+  -> (i -> String)
   -> H.Component HH.HTML (Query i) Input Output m
-component cfg =
+component cfg encodeTag =
   H.lifecycleParentComponent
   { initialState
   , render
@@ -221,7 +222,7 @@ component cfg =
 
       FromTagInput o k -> k <$
         case o of
-          TI.OnChosen x -> H.modify (state (_ { tags = map cfg.renderText x }))
+          TI.OnChosen x -> H.modify (state (_ { tags = map encodeTag x }))
 
 
 unwrapResponse :: forall i m a. Either Error a -> (a -> DSL i m Unit) -> DSL i m Unit

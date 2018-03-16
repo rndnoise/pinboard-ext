@@ -1,4 +1,4 @@
-module Pinboard.UI.TagInput
+module Pinboard.UI.Component.TagInput
   ( Input
   , State
   , Query(..)
@@ -31,8 +31,8 @@ import DOM.Event.Event          as E
 import DOM.Event.Types          as ET
 import DOM.Event.KeyboardEvent  (key, metaKey, shiftKey, altKey)
 
-import Pinboard.UI.Debounce     (Debouncer)
-import Pinboard.UI.Debounce     as D
+import Pinboard.UI.Component.Debounce (Debouncer)
+import Pinboard.UI.Component.Debounce as D
 
 -------------------------------------------------------------------------------
 
@@ -40,22 +40,45 @@ type Input = Unit
 
 type Config i m =
   { suggest      :: Array i -> String -> m (Array i)
+    -- ^ Computes suggestions given the previously
+    --   chosen values and the current text buffer
+
   , parse        :: String -> i
-  , renderText   :: i -> String
+    -- ^ Converts the text buffer to an item
+
   , renderChoice :: i -> HTML i
+    -- ^ Renders a chosen item
+
   , renderOption :: i -> HTML i
+    -- ^ Renders a suggested item
+
   , hideDelay    :: Milliseconds
+    -- ^ Wait after losing focus to hide the suggested items
+
   , showDelay    :: Milliseconds }
+    -- ^ Wait after text entry before computing suggestions
+
 
 newtype State i e = State
   { buffer  :: String
+    -- ^ The value of the text input field
+
   , chosen  :: Array i
+    -- ^ The chosen items
+
   , options :: Options i e }
+    -- ^ State of the current suggestions
 
 newtype Options i e = Options
   { visible     :: Boolean
+    -- ^ Whether the suggestions are displayed
+
   , options     :: Array i
+    -- ^ Suggestions computed from Config.suggest
+
   , hoverIdx    :: Maybe Int
+    -- ^ Which suggestion is currently highlighted
+
   , waitToHide  :: Maybe (Debouncer (avar :: AVAR, dom :: DOM | e))
   , waitToShow  :: Maybe (Debouncer (avar :: AVAR, dom :: DOM | e)) }
 
@@ -64,15 +87,29 @@ derive instance newtypeOptions :: Newtype (Options i e) _
 
 data Query i k
   = OnKey ET.KeyboardEvent k
+    -- ^ key was pressed in the text buffer
+
   | OnBlur ET.FocusEvent k
+    -- ^ the text entry lost focus
+
   | OnInput String k
+    -- ^ the text buffer changed
+
   | OnFocus ET.FocusEvent k
+    -- ^ the text entry gained focus
+
   | Reject Int k
+    -- ^ a chosen item is deleted
+
   | Choose Int k
+    -- ^ a suggested item is chosen
+
   | SetChosen (Array i) k
+    -- ^ allows a parent component to change the value
 
 data Output i
   = OnChosen (Array i)
+    -- ^ contains the now-current set of chosen items
 
 type HTML i    = H.ComponentHTML (Query i)
 type DSL i m e = H.ComponentDSL (State i e) (Query i) (Output i) m

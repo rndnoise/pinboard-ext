@@ -1,4 +1,4 @@
-module Pinboard.UI.Icons where
+module Pinboard.UI.Internal.Icons where
 
 import Data.Monoid              ((<>))
 import Halogen.HTML             (HTML, IProp)

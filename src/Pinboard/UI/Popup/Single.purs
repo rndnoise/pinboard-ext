@@ -37,7 +37,7 @@ newtype State = State
   , toRead      :: Boolean
   , private     :: Boolean
   , time        :: Maybe DateTime
-  , status      :: Maybe Status }
+  , status      :: Status }
 
 derive instance newtypeState :: Newtype State _
 
@@ -96,75 +96,68 @@ component cfg =
       , toRead      : false
       , private     : true
       , time        : Nothing
-      , status      : Nothing }
+      , status      : Normal "" }
 
     render :: State -> HTML i m
     render (State s) =
-      HH.div [ HP.id_ "single" ]
-      [ fromMaybe (HH.text "") (map renderStatus s.status)
-      , HH.div [ class_ "single" ]
-        [ HH.form_ $
-          [ HH.label [ HP.for "url", class_ "text" ]
-            [ HH.text "URL:"
-            , HH.input
-              [ HP.id_ "url"
-              , HP.type_ HP.InputUrl
-              , HP.value s.url
-              , HE.onValueInput (HE.input OnUrl) ]
-            ]
+      HH.form [HP.id_ "single"]
+      [ renderStatus s.status
+      , HH.div [class_ "urgh"] $
+        [ HH.label [class_ "text"]
+          [ HH.text "URL:"
+          , HH.input
+            [ HP.id_ "url"
+            , HP.type_ HP.InputUrl
+            , HP.value s.url
+            , HE.onValueInput (HE.input OnUrl) ] ]
 
-          , HH.label [ HP.for "title", class_ "text" ]
-            [ HH.text "Title:"
-            , HH.input
-              [ HP.id_ "title"
-              , HP.type_ HP.InputText
-              , HP.value s.title
-              , HE.onValueInput (HE.input OnTitle) ]
-            ]
+        , HH.label [class_ "text"]
+          [ HH.text "Title:"
+          , HH.input
+            [ HP.id_ "title"
+            , HP.type_ HP.InputText
+            , HP.value s.title
+            , HE.onValueInput (HE.input OnTitle) ] ]
 
-          , HH.label [ HP.for "tags", class_ "select" ]
-            [ HH.text "Tags:"
-            , HH.slot TagSlot (TI.component cfg) unit (HE.input FromTagInput) ]
+        , HH.label [class_ "select"]
+          [ HH.text "Tags:"
+          , HH.slot TagSlot (TI.component cfg) unit (HE.input FromTagInput) ]
 
-          , HH.label [ HP.for "desc", class_ "textarea" ]
-            [ HH.text "Description:"
-            , HH.textarea
-              [ HP.id_ "desc"
-              , HP.value s.desc
-              , HE.onValueInput (HE.input OnDesc) ]
-            ]
+        , HH.label [class_ "textarea"]
+          [ HH.text "Description:"
+          , HH.textarea
+            [ HP.id_ "desc"
+            , HP.value s.desc
+            , HE.onValueInput (HE.input OnDesc) ] ]
 
-          , HH.label [ HP.for "toread", class_ "checkbox" ]
-            [ HH.input
-              [ HP.id_ "toread"
-              , HP.type_ HP.InputCheckbox
-              , HP.checked s.toRead
-              , HE.onChecked (HE.input OnToRead) ]
-            , HH.text "Read later" ]
+        , HH.label [class_ "checkbox"]
+          [ HH.input
+            [ HP.id_ "toread"
+            , HP.type_ HP.InputCheckbox
+            , HP.checked s.toRead
+            , HE.onChecked (HE.input OnToRead) ]
+          , HH.text "Read later" ]
 
-          , HH.label [ HP.for "private", class_ "checkbox" ]
-            [ HH.input
-              [ HP.id_ "private"
-              , HP.type_ HP.InputCheckbox
-              , HP.checked s.private
-              , HE.onChecked (HE.input OnPrivate) ]
-            , HH.text "Private" ]
-          ]
-          <>
-          guard (isJust s.time)
-          [ HH.button [ class_ "danger", HE.onClick (HE.input Delete) ]
-            [ HH.text "Delete" ]
-          ]
-          <>
-          [ HH.button [ class_ "primary", HE.onClick (HE.input Save) ]
-            [ HH.text "Save" ]
-          ]
-        ]
-      ]
+        , HH.label [class_ "checkbox"]
+          [ HH.input
+            [ HP.id_ "private"
+            , HP.type_ HP.InputCheckbox
+            , HP.checked s.private
+            , HE.onChecked (HE.input OnPrivate) ]
+          , HH.text "Private" ] ]
+        <>
+        guard (isJust s.time)
+        [ HH.button [class_ "danger", HE.onClick (HE.input Delete)]
+          [ HH.text "Delete" ] ]
+
+        <>
+        [ HH.button [class_ "primary", HE.onClick (HE.input Save)]
+          [ HH.text "Save" ] ] ]
+
       where
-        renderStatus (Error x) = HH.div [ class_ "status danger"  ] [ HH.text x ]
-        renderStatus (Normal x) = HH.div [ class_ "status light" ] [ HH.text x ]
-        renderStatus (Success x) = HH.div [ class_ "status success" ] [ HH.text x ]
+        renderStatus (Error x) = HH.div [class_ "status danger"] [ HH.text x ]
+        renderStatus (Normal x) = HH.div [class_ "status light"] [ HH.text x ]
+        renderStatus (Success x) = HH.div [class_ "status success"] [ HH.text x ]
 
     eval :: Query i ~> DSL i m
     eval q = case q of
@@ -251,12 +244,12 @@ state f = wrap <<< f <<< unwrap
 
 
 message :: String -> (State -> State)
-message s = state (_ { status = Just (Normal s) })
+message s = state (_ { status = Normal s })
 
 
 error :: String -> (State -> State)
-error s = state (_ { status = Just (Error s) })
+error s = state (_ { status = Error s })
 
 
 success :: String -> (State -> State)
-success s = state (_ { status = Just (Success s) })
+success s = state (_ { status = Success s })

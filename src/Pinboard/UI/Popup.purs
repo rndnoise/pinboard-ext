@@ -28,7 +28,7 @@ import Data.Functor.Coproduct.Nested  (Coproduct2)
 import Chrome.FFI               (CHROME)
 import Chrome.Tabs              (Tab, query, queryOptions) as CT
 import Chrome.Tabs.Tab          (active) as CT
-import Pinboard.UI.HTML         (class_)
+import Pinboard.UI.HTML         (class_, classes)
 import Pinboard.UI.Icons        as PI
 import Pinboard.UI.Complete     as CC
 import Pinboard.UI.TagInput     as TI
@@ -104,13 +104,19 @@ component =
     render :: State -> HTML m
     render (State s) =
       HH.div_
-      [ PI.multi  [ class_ (toggle multi),  HE.onClick (HE.input_ OnClickMulti)  ]
-      , PI.single [ class_ (toggle single), HE.onClick (HE.input_ OnClickSingle) ]
+      [ HH.div
+          [ classes [ toggle multi, "multi-icon" ]
+          , HE.onClick (HE.input_ OnClickMulti) ]
+          [ PI.multi [] ]
       , HH.div
-          [ class_ (toggle multi) ]
+          [ classes [ toggle single, "single-icon" ]
+          , HE.onClick (HE.input_ OnClickSingle) ]
+          [ PI.single [] ]
+      , HH.div
+          [ classes [ toggle multi, "multi" ] ]
           [ HH.slot' CP.cp1 unit (PM.component cfg) s.allTabs absurd ]
       , HH.div
-          [ class_ (toggle single) ]
+          [ classes [ toggle single, "single" ] ]
           [ HH.slot' CP.cp2 unit (PS.component cfg) s.oneTab absurd ] ]
       where
         toggle x = if s.active == x then "active" else "dormant"

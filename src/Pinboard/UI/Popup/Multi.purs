@@ -29,9 +29,14 @@ newtype State = State
   , private :: Boolean
   , replace :: Boolean
   , chosen  :: Array Boolean
-  , status  :: Unit }
+  , status  :: Status }
 
 derive instance newtypeState :: Newtype State _
+
+data Status
+  = Error String
+  | Normal String
+  | Success String
 
 data Query i k
   = Save ET.MouseEvent k
@@ -76,57 +81,64 @@ component cfg =
       , private:  true
       , replace:  true
       , chosen:   []
-      , status:   unit }
+      , status:   Normal "" }
 
     render :: State -> HTML i m
     render (State s) =
-      HH.form [ class_ "multi" ]
-        [ HH.div [ class_ "top" ]
-            [ HH.label [ HP.for "tags", class_ "select" ]
-              [ HH.text "Tags:"
-              , HH.slot TagSlot (TI.component cfg) unit (HE.input FromTagWidget) ]
+      HH.form [HP.id_ "multi", class_ "multi"]
+      [ renderStatus s.status
+      , HH.div [class_ "upper"]
+        [ HH.label [class_ "select"]
+          [ HH.text "Tags:"
+          , HH.slot TagSlot (TI.component cfg) unit (HE.input FromTagWidget) ]
 
-            , HH.label [ HP.for "toread", class_ "checkbox" ]
+        , HH.label [class_ "checkbox"]
+          [ HH.input
+            [ HP.id_ "toread"
+            , HP.type_ HP.InputCheckbox
+            , HP.checked true
+            , HE.onChecked (HE.input OnToRead) ]
+          , HH.text "Read later" ]
+
+        , HH.label [class_ "checkbox"]
+          [ HH.input
+            [ HP.id_ "private"
+            , HP.type_ HP.InputCheckbox
+            , HP.checked true
+            , HE.onChecked (HE.input OnPrivate) ]
+          , HH.text "Private" ]
+
+        , HH.label [class_ "checkbox"]
+          [ HH.input
+            [ HP.id_ "replace"
+            , HP.type_ HP.InputCheckbox
+            , HP.checked true
+            , HE.onChecked (HE.input OnReplace) ]
+          , HH.text "Replace" ]
+
+        , HH.button [class_ "primary", HE.onClick (HE.input Save)]
+          [ HH.text "Save" ] ]
+
+      , HH.ul [class_ "tabs"] $ flip mapWithIndex s.tabs \n tab ->
+          HH.li_
+            [ HH.label_
               [ HH.input
-                [ HP.id_ "toread"
+                [ HP.id_ ("t" <> show n)
                 , HP.type_ HP.InputCheckbox
                 , HP.checked true
-                , HE.onChecked (HE.input OnToRead) ]
-              , HH.text "Read later" ]
-            , HH.label [ HP.for "private", class_ "checkbox" ]
-              [ HH.input
-                [ HP.id_ "private"
-                , HP.type_ HP.InputCheckbox
-                , HP.checked true
-                , HE.onChecked (HE.input OnPrivate) ]
-              , HH.text "Private" ]
-            , HH.label [ HP.for "replace", class_ "checkbox" ]
-              [ HH.input
-                [ HP.id_ "replace"
-                , HP.type_ HP.InputCheckbox
-                , HP.checked true
-                , HE.onChecked (HE.input OnReplace) ]
-              , HH.text "Replace" ]
+                , HE.onChecked (HE.input (OnChoose n)) ]
+              , HH.img [HP.src (fromMaybe "" (CT.favIconUrl tab))]
+              , HH.input
+                [ class_ "title"
+                , HP.type_ HP.InputText
+                , HP.value (fromMaybe "" (CT.title tab))
+                , HE.onValueInput (HE.input (OnTitle n)) ]
+              , HH.div [class_ "url"] [ HH.text (fromMaybe "" (CT.url tab)) ] ] ] ]
 
-            , HH.button [ class_ "primary", HE.onClick (HE.input Save) ]
-              [ HH.text "Save" ] ]
-
-        , HH.ul_ $ flip mapWithIndex s.tabs \n tab ->
-            HH.li_
-              [ HH.label [ HP.for ("t" <> show n) ]
-                [ HH.input
-                  [ HP.id_ ("t" <> show n)
-                  , HP.type_ HP.InputCheckbox
-                  , HP.checked true
-                  , HE.onChecked (HE.input (OnChoose n)) ]
-                , HH.img [ HP.src (fromMaybe "" (CT.favIconUrl tab)) ]
-                , HH.input
-                  [ class_ "title"
-                  , HP.type_ HP.InputText
-                  , HP.value (fromMaybe "" (CT.title tab))
-                  , HE.onValueInput (HE.input (OnTitle n)) ]
-                , HH.div [ class_ "url"   ] [ HH.text (fromMaybe "" (CT.url tab)) ] ] ]
-        ]
+      where
+        renderStatus (Error x) = HH.div [class_ "status danger"] [ HH.text x ]
+        renderStatus (Normal x) = HH.div [class_ "status light"] [ HH.text x ]
+        renderStatus (Success x) = HH.div [class_ "status success"] [ HH.text x ]
 
     eval :: Query i ~> DSL i m
     eval q = case q of

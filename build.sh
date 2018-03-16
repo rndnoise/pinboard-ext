@@ -2,7 +2,7 @@
 set -e
 set -x
 
-OUT=disto
+OUT=dist
 
 bower install
 

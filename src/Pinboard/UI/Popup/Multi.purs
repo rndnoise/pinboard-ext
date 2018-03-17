@@ -136,7 +136,7 @@ component cfg encodeTag =
 
         , HH.button
           [ class_ "primary"
-          , HP.disabled (all (\x -> x.status /= Idle) s.tabs)
+          , HP.disabled (all (\x -> not x.chosen || x.status /= Idle) s.tabs)
           , HE.onClick (HE.input Save) ]
           [ HH.text "Save" ] ]
 
@@ -204,8 +204,8 @@ component cfg encodeTag =
         case res of
              Right x -> H.modify (updateTab n (_ { status = Success }))
              Left x  -> let msg = case x of
-                                       ServerError n -> "Server error " <> show n
-                                       DecodeError m -> "Decode error " <> m
+                                       ServerError msg -> "Server: " <> msg
+                                       DecodeError msg -> "JSON: "   <> msg
                          in H.modify (updateTab n (_ { status = Error msg }))
 
       FromTagWidget o k -> k <$

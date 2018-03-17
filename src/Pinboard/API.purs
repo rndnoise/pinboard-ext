@@ -294,7 +294,7 @@ makeReq path q = defaultRequest
 
 validateStatus :: StatusCode -> Either Error Unit
 validateStatus (StatusCode 200) = Right unit
-validateStatus (StatusCode x)   = Left (ServerError x)
+validateStatus (StatusCode x)   = Left (ServerError ("HTTP " <> show x))
 
 validateCode :: String -> Json -> Either Error Unit
 validateCode name x = do
@@ -302,7 +302,7 @@ validateCode name x = do
   z <- decodePropWith decodeString name o
   if z == "done"
     then Right unit
-    else Left (DecodeError (name <> ": unknown status (" <> z <> ")"))
+    else Left (ServerError z)
 
 root :: Name
 root = Just "<root>"

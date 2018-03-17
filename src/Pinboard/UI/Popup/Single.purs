@@ -236,8 +236,8 @@ unwrapResponse :: forall i m a. Either Error a -> (a -> DSL i m Unit) -> DSL i m
 unwrapResponse (Right a) f = f a
 unwrapResponse (Left e) _  =
   case e of
-       DecodeError msg  -> H.modify (error ("Decode error " <> msg))
-       ServerError code -> H.modify (error ("Server error " <> show code))
+       DecodeError msg -> H.modify (error ("JSON: "   <> msg))
+       ServerError msg -> H.modify (error ("Server: " <> msg))
 
 
 noBubble

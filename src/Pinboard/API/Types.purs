@@ -30,7 +30,7 @@ newtype Old a = Old a
 
 data Error
   = DecodeError String
-  | ServerError Int
+  | ServerError String
 
 type Post =
   { href        :: Url

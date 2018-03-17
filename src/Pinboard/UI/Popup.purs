@@ -19,6 +19,7 @@ import Halogen                  as H
 import Halogen.Aff              as HA
 import Halogen.HTML             as HH
 import Halogen.HTML.Events      as HE
+import Halogen.HTML.Properties  as HP
 import Halogen.VDom.Driver      as HV
 
 import Halogen.Component.ChildPath    as CP
@@ -29,7 +30,6 @@ import Chrome.FFI                     (CHROME)
 import Chrome.Tabs                    (Tab, query, queryOptions) as CT
 import Chrome.Tabs.Tab                (active) as CT
 import Pinboard.UI.Internal.HTML      (class_, classes)
-import Pinboard.UI.Internal.Icons     as PI
 import Pinboard.UI.Component.TagInput as TI
 import Pinboard.UI.Popup.Complete     as CC
 import Pinboard.UI.Popup.Multi        as PM
@@ -103,14 +103,14 @@ component =
     render :: State -> HTML m
     render (State s) =
       HH.div_
-      [ HH.div
-          [ classes [ toggle multi, "multi-icon" ]
+      [ HH.img
+          [ HP.src "img/plus-3.svg"
+          , classes [ toggle multi, "multi-icon" ]
           , HE.onClick (HE.input_ OnClickMulti) ]
-          [ PI.multi [] ]
-      , HH.div
-          [ classes [ toggle single, "single-icon" ]
+      , HH.img
+          [ HP.src "img/plus.svg"
+          , classes [ toggle single, "single-icon" ]
           , HE.onClick (HE.input_ OnClickSingle) ]
-          [ PI.single [] ]
       , HH.div
           [ classes [ toggle multi, "multi" ] ]
           [ HH.slot' CP.cp1 unit (PM.component cfg fst) s.allTabs absurd ]

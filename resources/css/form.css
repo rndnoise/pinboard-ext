@@ -17,6 +17,7 @@ button.danger:focus    { box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.5); }
 button.primary:focus   { box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.5); }
 button.secondary:focus { box-shadow: 0 0 0 0.2rem rgba(108, 117, 125, 0.5); }
 
+/* TODO: these are the same colors as above */
 button.danger:disabled    { background-color: #dc3545; border-color: #dc3545; }
 button.primary:disabled   { background-color: #007bff; border-color: #007bff; }
 button.secondary:disabled { background-color: #6c757d; border-color: #6c757d; }

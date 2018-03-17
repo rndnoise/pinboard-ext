@@ -41,7 +41,7 @@ button:active
 .multi-icon  { border-radius: 2px; right: 0px;  }
 .single-icon { border-radius: 2px; right: 32px; }
 
-.status
+div.status
 { width: 436px;
   height: 32px;
   display: table-cell;
@@ -71,32 +71,42 @@ button:active
 #multi ul.tabs
 { margin: 0;
   padding: 0;
-  background-color: #f0f6fa; }
+  max-height: 400px;
+  overflow-y: auto;
+  background-color: #f6f6f6; }
 
 #multi ul.tabs li
 { margin: 0;
   list-style: none;
   border-bottom: 1px solid #ccc; }
 
-#multi ul.tabs li:hover
+#multi ul.tabs .idle label:hover
 { color: #ffffff;
   border-color: #007bff;
   background-color: #007bff; }
 
-#multi ul.tabs li label
+#multi ul.tabs label
 { padding: 8px 1rem 10px 1rem; }
 
 #multi ul.tabs input[type="checkbox"]
 { float: left;
-  margin: 0.9rem 0 0 0; }
+  margin: 0.9rem 2px 0 2px; }
 
-#multi input.title
+#multi ul.tabs img.status
+{ float: left;
+  width: 32px;
+  height: 32px;
+  margin: 4px 0 0 -6px; }
+
+#multi ul.tabs .title
 { margin: 0 0 0 10px;
   font-size: 1rem;
   width: 80%;
   border: none;
   outline: none;
-  padding: 0.2rem 6px;
+  padding: 0.2rem 6px 0 5px;
+  line-height: 1.3rem;
+  white-space: pre;
   overflow: hidden; }
 
 #multi input.title:hover
@@ -110,14 +120,14 @@ button:active
   outline-style: auto;
   outline-width: 5px; }
 
-#multi ul.tabs li .url
-{ margin-left: 28px;
+#multi ul.tabs .url
+{ margin-left: 32px;
   margin-right: 50px;
   font-size: 0.75rem;
   white-space: nowrap;
   overflow: hidden; }
 
-#multi ul.tabs li img
+#multi ul.tabs img.favicon
 { float: right;
   margin-top: 4px;
   width: 32px;

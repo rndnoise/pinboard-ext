@@ -29,9 +29,43 @@ import Data.StrMap          as StrMap
 import Network.HTTP.Affjax  (AJAX, AffjaxRequest, affjax, defaultRequest)
 import Network.HTTP.StatusCode (StatusCode(..))
 
-import Pinboard.API.Types (AddOptions, AllOptions, Error(..), GetOptions, New(..), Note, Old(..), Post, RecentOptions, Suggestions, Tag, Title, Url, addOptions, allOptions, getOptions, recentOptions)
-import Pinboard.API.Encode (class ToQuery, AddOptions'(..), AllOptions'(..), GetOptions'(..), RecentOptions'(..), toQuery, printQuery)
-import Pinboard.API.Decode (Name, decodeArray, decodeDate, decodeNumber, decodeObject, decodePosts, decodePropWith, decodeString)
+import Pinboard.API.Types
+  ( AddOptions
+  , AllOptions
+  , Error(..)
+  , GetOptions
+  , New(..)
+  , Note
+  , Old(..)
+  , Post
+  , RecentOptions
+  , Suggestions
+  , Tag
+  , Title
+  , Url
+  , addOptions
+  , allOptions
+  , getOptions
+  , recentOptions )
+
+import Pinboard.API.Encode
+  ( class ToQuery
+  , AddOptions'(..)
+  , AllOptions'(..)
+  , GetOptions'(..)
+  , RecentOptions'(..)
+  , toQuery
+  , printQuery )
+
+import Pinboard.API.Decode
+  ( Name
+  , decodeArray
+  , decodeDate
+  , decodeNumber
+  , decodeObject
+  , decodePosts
+  , decodePropWith
+  , decodeString )
 
 
 -- | Returns the most recent time any bookmark was added, updated or deleted.
@@ -45,22 +79,35 @@ postsUpdate = decode <$> affjax (makeReq_ "posts/update")
 
 
 -- | Add a bookmark.
-postsAdd :: forall eff. Url -> Title -> AddOptions -> Aff (ajax :: AJAX | eff) (Either Error Unit)
+postsAdd
+  :: forall eff
+   . Url
+  -> Title
+  -> AddOptions
+  -> Aff (ajax :: AJAX | eff) (Either Error Unit)
 postsAdd url description options = decode <$> affjax (makeReq "posts/add" query)
   where
-    query    = toQuery [Tuple "url" url, Tuple "description" description] <> toQuery (AddOptions' options)
     decode r = validateStatus r.status *> validateCode "result_code" r.response
+    query    = toQuery [ Tuple "url" url
+                       , Tuple "description" description
+                       ] <> toQuery (AddOptions' options)
 
 
 -- | Delete a bookmark.
-postsDelete :: forall eff. Url -> Aff (ajax :: AJAX | eff) (Either Error Unit)
+postsDelete
+  :: forall eff
+   . Url
+  -> Aff (ajax :: AJAX | eff) (Either Error Unit)
 postsDelete url = decode <$> affjax (makeReq "posts/delete" (Tuple "url" url))
   where decode r = validateStatus r.status *> validateCode "result_code" r.response
 
 
 -- | Returns one or more posts on a single day matching the arguments. If
 -- | no date or url is given, date of most recent bookmark will be used.
-postsGet :: forall eff. GetOptions -> Aff (ajax :: AJAX | eff) (Either Error (Array Post))
+postsGet
+  :: forall eff
+   . GetOptions
+  -> Aff (ajax :: AJAX | eff) (Either Error (Array Post))
 postsGet options = decode <$> affjax (makeReq "posts/get" (GetOptions' options))
   where
     decode r = do
@@ -70,43 +117,69 @@ postsGet options = decode <$> affjax (makeReq "posts/get" (GetOptions' options))
 
 
 -- | Returns a list of the user's most recent posts, filtered by tag.
-postsRecent :: forall eff. RecentOptions -> Aff (ajax :: AJAX | eff) (Either Error (Array Post))
-postsRecent options = decode <$> affjax (makeReq "posts/recent" (RecentOptions' options))
+postsRecent
+  :: forall eff
+   . RecentOptions
+  -> Aff (ajax :: AJAX | eff) (Either Error (Array Post))
+postsRecent options =
+  decode <$> affjax (makeReq "posts/recent" (RecentOptions' options))
   where decode r = validateStatus r.status *> decodePosts root r.response
 
 
 -- | Returns a list of dates with the number of posts at each date.
-postsDates :: forall eff. Maybe (Array Tag) -> Aff (ajax :: AJAX | eff) (Either Error (Array (Tuple DateTime Number)))
-postsDates options = decode <$> affjax (makeReq "posts/dates" (Tuple "tag" <$> sequence options))
+postsDates
+  :: forall eff
+   . Maybe (Array Tag)
+  -> Aff (ajax :: AJAX | eff)
+      (Either Error (Array (Tuple DateTime Number)))
+postsDates options =
+  decode <$> affjax (makeReq "posts/dates" (Tuple "tag" <$> sequence options))
   where
     decode r = do
       _ <- validateStatus r.status
       o <- decodeObject root r.response
       traverse op (StrMap.toArrayWithKey Tuple o)
-    op (Tuple k v) = Tuple <$> decodeDate root (fromString k) <*> decodeNumber root v
+    op (Tuple k v) =
+      Tuple <$> decodeDate root (fromString k)
+            <*> decodeNumber root v
 
 
 -- | Returns all bookmarks in the user's account.
-postsAll :: forall eff. AllOptions -> Aff (ajax :: AJAX | eff) (Either Error (Array Post))
+postsAll
+  :: forall eff
+   . AllOptions
+  -> Aff (ajax :: AJAX | eff) (Either Error (Array Post))
 postsAll options = decode <$> affjax (makeReq "posts/all" (AllOptions' options))
   where decode r = validateStatus r.status *> decodePosts root r.response
 
 
--- | Returns a list of popular tags and recommended tags for a given URL. Popular tags are
--- | tags used site-wide for the url; recommended tags are drawn from the user's own tags.
-postsSuggest :: forall eff. Url -> Aff (ajax :: AJAX | eff) (Either Error Suggestions)
+-- | Returns a list of popular tags and recommended tags for a given URL.
+-- | Popular tags are tags used site-wide for the url; recommended tags
+-- | are drawn from the user's own tags.
+postsSuggest
+  :: forall eff
+   . Url
+  -> Aff (ajax :: AJAX | eff) (Either Error Suggestions)
 postsSuggest url = decode <$> affjax (makeReq "posts/suggest" (Tuple "url" url))
   where
     decode r = do
       _ <- validateStatus r.status
       o <- decodeObject root r.response
       { popular: _, recommended: _ } <$>
-        decodePropWith (\name x -> traverse (decodeString name) =<< decodeArray name x) "popular" o <*>
-        decodePropWith (\name x -> traverse (decodeString name) =<< decodeArray name x) "recommended" o
+        decodePropWith
+          (\name x -> traverse (decodeString name) =<< decodeArray name x)
+          "popular" o <*>
+        decodePropWith
+          (\name x -> traverse (decodeString name) =<< decodeArray name x)
+          "recommended" o
 
 
--- | Returns a full list of the user's tags along with the number of times they were used.
-tagsGet :: forall eff. Aff (ajax :: AJAX | eff) (Either Error (Array (Tuple Tag Number)))
+-- | Returns a full list of the user's tags along with the number of
+-- | times they were used.
+tagsGet
+  :: forall eff
+   . Aff (ajax :: AJAX | eff)
+      (Either Error (Array (Tuple Tag Number)))
 tagsGet = decode <$> affjax (makeReq_ "tags/get")
   where
     decode r = do
@@ -117,13 +190,20 @@ tagsGet = decode <$> affjax (makeReq_ "tags/get")
 
 
 -- | Delete an existing tag.
-tagsDelete :: forall eff. Tag -> Aff (ajax :: AJAX | eff) (Either Error Unit)
+tagsDelete
+  :: forall eff
+   . Tag
+  -> Aff (ajax :: AJAX | eff) (Either Error Unit)
 tagsDelete tag = decode <$> affjax (makeReq "tags/delete" (Tuple "tag" tag))
   where decode r = validateStatus r.status *> validateCode "result" r.response
 
 
 -- | Rename an tag, or fold it in to an existing tag.
-tagsRename :: forall eff. Old Tag -> New Tag -> Aff (ajax :: AJAX | eff) (Either Error Unit)
+tagsRename
+  :: forall eff
+   . Old Tag
+  -> New Tag
+  -> Aff (ajax :: AJAX | eff) (Either Error Unit)
 tagsRename (Old old) (New new) = decode <$> affjax (makeReq "tags/rename" query)
   where
     query    = [Tuple "old" old, Tuple "new" new]
@@ -170,8 +250,12 @@ notesList = decode <$> affjax (makeReq_ "notes/list")
         decodePropWith decodeDate   "updated_at" o
 
 
--- | Returns an individual user note. The hash property is a 20 character long sha1 hash of the note text.
-notesGet :: forall eff. String -> Aff (ajax :: AJAX | eff) (Either Error Note)
+-- | Returns an individual user note. The hash property is a 20 character
+-- | long sha1 hash of the note text.
+notesGet
+  :: forall eff
+   . String
+  -> Aff (ajax :: AJAX | eff) (Either Error Note)
 notesGet id = decode <$> affjax (makeReq_ ("notes/" <> id))
   where
     decode r = do
@@ -196,7 +280,7 @@ makeReq_ path = defaultRequest
                 , withCredentials = true
                 , username = Just "kputnam"
                 , password = Just "4-UTi8IFpczfbI'" }
-  where url = "https://kputnam:4-UTi8IFpczfbI'@api.pinboard.in/v1/"
+  where url = "https://api.pinboard.in/v1/"
               <> path <> printQuery (toQuery (Tuple "format" "json"))
 
 makeReq :: forall a. ToQuery a => String -> a -> AffjaxRequest Unit
@@ -205,7 +289,7 @@ makeReq path q = defaultRequest
                  , withCredentials = true
                  , username = Just "kputnam"
                  , password = Just "4-UTi8IFpczfbI'" }
-  where url = "https://kputnam:4-UTi8IFpczfbI'@api.pinboard.in/v1/"
+  where url = "https://api.pinboard.in/v1/"
               <> path <> printQuery (toQuery (Tuple "format" "json") <> toQuery q)
 
 validateStatus :: StatusCode -> Either Error Unit

@@ -23,9 +23,16 @@ import Halogen.HTML.Properties  as HP
 import Chrome.Tabs.Tab          (Tab, title, url) as CT
 import Control.Monad.Aff.AVar   (AVAR)
 
-import Pinboard.API                   (Post, Error(..), postsGet, postsAdd, postsDelete, addOptions, getOptions)
 import Pinboard.UI.Internal.HTML      (class_)
 import Pinboard.UI.Component.TagInput as TI
+import Pinboard.API 
+  ( Post
+  , Error(..)
+  , postsGet
+  , postsAdd
+  , postsDelete
+  , addOptions
+  , getOptions )
 
 -------------------------------------------------------------------------------
 
@@ -231,6 +238,7 @@ unwrapResponse (Left e) _  =
   case e of
        DecodeError msg  -> H.modify (error ("Decode error " <> msg))
        ServerError code -> H.modify (error ("Server error " <> show code))
+
 
 noBubble
   :: forall e i m

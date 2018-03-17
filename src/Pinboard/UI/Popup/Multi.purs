@@ -1,51 +1,63 @@
 module Pinboard.UI.Popup.Multi where
 
 import Prelude
-import Data.Array               (mapWithIndex)
-import Data.Either              (Either)
-import Data.Maybe               (Maybe(..), fromMaybe)
-import Data.Newtype             (class Newtype)
-import Control.Monad.Aff.AVar   (AVAR)
-import Control.Monad.Aff.Class  (class MonadAff)
-import Network.HTTP.Affjax      (AJAX)
-import DOM                      (DOM)
-import DOM.Event.Types          as ET
-import Halogen                  as H
-import Halogen.HTML             as HH
-import Halogen.HTML.Events      as HE
-import Halogen.HTML.Properties  as HP
+import Data.Array                 (all, mapWithIndex, modifyAt)
+import Data.Either                (Either(..))
+import Data.Maybe                 (Maybe(..), fromMaybe)
+import Data.Newtype               (class Newtype, over, unwrap)
+import Data.Filterable            (filterMap)
+import Data.TraversableWithIndex  (forWithIndex)
+import Control.Monad.Aff.AVar     (AVAR)
+import Control.Monad.Aff.Class    (class MonadAff)
+import Network.HTTP.Affjax        (AJAX)
+import DOM                        (DOM)
+import DOM.Event.Event            as E
+import DOM.Event.Types            as ET
+import Halogen                    as H
+import Halogen.HTML               as HH
+import Halogen.HTML.Events        as HE
+import Halogen.HTML.Properties    as HP
 
 import Chrome.Tabs.Tab                as CT
-import Pinboard.API                   (Error)
+import Pinboard.API                   (Error(..), postsAdd, addOptions)
 import Pinboard.UI.Internal.HTML      (class_)
 import Pinboard.UI.Component.TagInput as TI
 
 -------------------------------------------------------------------------------
 
 newtype State = State
-  { tabs    :: Array CT.Tab
+  { tabs    :: Array Tab
   , tags    :: Array String
   , toRead  :: Boolean
   , private :: Boolean
   , replace :: Boolean
-  , chosen  :: Array Boolean
+  , chosen  :: Array Boolean }
+
+type Tab =
+  { url     :: String
+  , title   :: String
+  , favIcon :: Maybe String
+  , chosen  :: Boolean
   , status  :: Status }
 
 derive instance newtypeState :: Newtype State _
 
 data Status
-  = Error String
-  | Normal String
-  | Success String
+  = Idle
+  | Waiting
+  | Success
+  | Error String
+
+derive instance eqStatus :: Eq Status
 
 data Query i k
   = Save ET.MouseEvent k
   | OnTitle Int String k
-  | OnChoose Int Boolean k
+  | OnCheck Int Boolean k
   | OnToRead Boolean k
   | OnPrivate Boolean k
   | OnReplace Boolean k
-  | ApiPostAdd (Either Error Unit) k
+  | ApiPostAdd Int (Either Error Unit) k
   | FromTagWidget (TI.Output i) k
 
 type Input = Array CT.Tab
@@ -76,18 +88,23 @@ component cfg encodeTag =
   where
     initialState :: Input -> State
     initialState ts = State
-      { tabs:     ts
+      { tabs:     filterMap op ts
       , tags:     []
       , toRead:   false
       , private:  true
       , replace:  true
-      , chosen:   []
-      , status:   Normal "" }
+      , chosen:   true <$ ts }
+      where
+        op t = { url: _, title: _, favIcon: _, chosen: _, status: Idle }
+               <$> CT.url t
+               <*> CT.title t
+               <*> pure (CT.favIconUrl t)
+               <*> pure true
 
     render :: State -> HTML i m
     render (State s) =
       HH.form [HP.id_ "multi", class_ "multi"]
-      [ renderStatus s.status
+      [ HH.div [class_ "status light"] [ HH.text "TODO" ]
       , HH.div [class_ "upper"]
         [ HH.label [class_ "select"]
           [ HH.text "Tags:"
@@ -117,39 +134,94 @@ component cfg encodeTag =
             , HE.onChecked (HE.input OnReplace) ]
           , HH.text "Replace" ]
 
-        , HH.button [class_ "primary", HE.onClick (HE.input Save)]
+        , HH.button
+          [ class_ "primary"
+          , HP.disabled (all (\x -> x.status /= Idle) s.tabs)
+          , HE.onClick (HE.input Save) ]
           [ HH.text "Save" ] ]
 
-      , HH.ul [class_ "tabs"] $ flip mapWithIndex s.tabs \n tab ->
-          HH.li_
+      , HH.ul [class_ "tabs"] $ flip mapWithIndex s.tabs \n t ->
+          HH.li [class_ case t.status of
+                             Idle -> "idle"
+                             _    -> ""]
             [ HH.label_
-              [ HH.input
-                [ HP.id_ ("t" <> show n)
-                , HP.type_ HP.InputCheckbox
-                , HP.checked true
-                , HE.onChecked (HE.input (OnChoose n)) ]
-              , HH.img [HP.src (fromMaybe "" (CT.favIconUrl tab))]
-              , HH.input
-                [ class_ "title"
-                , HP.type_ HP.InputText
-                , HP.value (fromMaybe "" (CT.title tab))
-                , HE.onValueInput (HE.input (OnTitle n)) ]
-              , HH.div [class_ "url"] [ HH.text (fromMaybe "" (CT.url tab)) ] ] ] ]
-
-      where
-        renderStatus (Error x) = HH.div [class_ "status danger"] [ HH.text x ]
-        renderStatus (Normal x) = HH.div [class_ "status light"] [ HH.text x ]
-        renderStatus (Success x) = HH.div [class_ "status success"] [ HH.text x ]
+              [ case t.status of
+                     Idle ->
+                       HH.input
+                       [ HP.id_ ("t" <> show n)
+                       , HP.type_ HP.InputCheckbox
+                       , HP.checked t.chosen
+                       , HE.onChecked (HE.input (OnCheck n)) ]
+                     Waiting -> HH.img [class_ "status", HP.src "img/three.svg"]
+                     Success -> HH.img [class_ "status", HP.src "img/bookmark.svg"]
+                     Error x -> HH.img [class_ "status", HP.src "img/issue.svg"]
+              , HH.img [class_ "favicon", HP.src (fromMaybe "" t.favIcon)]
+              , case t.status of
+                     Idle ->
+                       HH.input
+                       [ class_ "title"
+                       , HP.type_ HP.InputText
+                       , HP.value t.title
+                       , HE.onValueInput (HE.input (OnTitle n)) ]
+                     Error x -> HH.div [class_ "title"] [ HH.text x ]
+                     _       -> HH.div [class_ "title"] [ HH.text t.title ]
+              , HH.div [class_ "url"] [ HH.text t.url ] ] ] ]
 
     eval :: Query i ~> DSL i m
     eval q = case q of
-      Save e k -> pure k
-      OnTitle n s k -> pure k
-      OnChoose n b k -> pure k
-      OnToRead b k -> pure k
-      OnPrivate b k -> pure k
-      OnReplace b k -> pure k
-      ApiPostAdd res k -> pure k
+      Save e k -> k <$ do
+        noBubble e
+        s <- H.gets unwrap
+
+        forWithIndex s.tabs \n t ->
+          when (t.chosen && t.status == Idle) $ unit <$ H.fork do
+            H.modify (updateTab n (_ { status = Waiting }))
+
+            res <- H.liftAff $ postsAdd t.url t.title (addOptions
+                    { tags    = Just s.tags
+                    , replace = Just s.replace
+                    , shared  = Just (not s.private)
+                    , toRead  = Just s.toRead })
+
+            eval (ApiPostAdd n res k)
+
+      OnTitle n value k -> k <$ do
+        H.modify (updateTab n (_ { title = value }))
+
+      OnCheck n value k -> k <$ do
+        H.modify (updateTab n (_ { chosen = value }))
+
+      OnToRead value k -> k <$ do
+        H.modify (over State (_ { toRead = value }))
+
+      OnPrivate value k -> k <$ do
+        H.modify (over State (_ { private = value }))
+
+      OnReplace value k -> k <$ do
+        H.modify (over State (_ { replace = value }))
+
+      ApiPostAdd n res k -> k <$ do
+        case res of
+             Right x -> H.modify (updateTab n (_ { status = Success }))
+             Left x  -> let msg = case x of
+                                       ServerError n -> "Server error " <> show n
+                                       DecodeError m -> "Decode error " <> m
+                         in H.modify (updateTab n (_ { status = Error msg }))
+
       FromTagWidget o k -> k <$
         case o of
-          TI.OnChosen x -> pure unit
+          TI.OnChosen value -> H.modify (over State (_ { tags = map encodeTag value }))
+
+
+updateTab :: Int -> (Tab -> Tab) -> State -> State
+updateTab n f (State s) = case modifyAt n f s.tabs of
+  Nothing -> State s
+  Just ts -> State (s { tabs = ts })
+
+
+noBubble
+  :: forall e i m
+   . MonadAff (dom :: DOM | e) m
+  => ET.MouseEvent
+  -> DSL i m Unit
+noBubble = H.liftEff <<< E.preventDefault <<< ET.mouseEventToEvent

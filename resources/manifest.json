@@ -15,12 +15,12 @@
     "default_title": "Pinboard",
     "default_popup": "popup.html",
     "default_icon":{
-      "16": "img/paused/16.png",
-      "24": "img/paused/24.png",
-      "32": "img/paused/32.png",
-      "64": "img/paused/64.png",
-      "128":"img/paused/128.png",
-      "256":"img/paused/256.png"}},
+      "16": "img/active/16.png",
+      "24": "img/active/24.png",
+      "32": "img/active/32.png",
+      "64": "img/active/64.png",
+      "128":"img/active/128.png",
+      "256":"img/active/256.png"}},
   "options_ui": {"page": "options.html"},
   "background": {"scripts": ["background.js"]},
   "permissions": [

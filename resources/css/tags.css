@@ -3,11 +3,7 @@
   border: 1px solid #ccc;
   overflow: hidden; }
 
-#tags.focus
-{ outline-color: rgb(59,153,252);
-  outline-offset: -2px;
-  outline-style: auto;
-  outline-width: 5px; }
+#tags.focus { }
 
 #tags > div { overflow: hidden; }
 

@@ -1,4 +1,7 @@
 
+firefox: addons
+opera: extension
+
 ## bug fixes
 
 - prevent concurrent writes

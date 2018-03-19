@@ -154,13 +154,12 @@ component cfg encodeTag =
             , HE.onChecked (HE.input OnPrivate) ]
           , HH.text "Private" ] ]
         <>
+        [ HH.button [class_ "primary", HE.onClick (HE.input Save)]
+          [ HH.text "Save" ] ]
+        <>
         guard (isJust s.time)
         [ HH.button [class_ "danger", HE.onClick (HE.input Delete)]
-          [ HH.text "Delete" ] ]
-
-        <>
-        [ HH.button [class_ "primary", HE.onClick (HE.input Save)]
-          [ HH.text "Save" ] ] ]
+          [ HH.text "Delete" ] ] ]
 
       where
         renderStatus (Error x) = HH.div [class_ "status danger"] [ HH.text x ]

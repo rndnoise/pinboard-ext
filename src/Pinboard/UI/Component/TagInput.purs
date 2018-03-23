@@ -52,6 +52,9 @@ type Config i m =
   , renderOption :: i -> HTML i
     -- ^ Renders a suggested item
 
+  , textValue    :: i -> String
+    -- ^ Convert an item to serializable value
+
   , hideDelay    :: Milliseconds
     -- ^ Wait after losing focus to hide the suggested items
 

@@ -1,6 +1,6 @@
 #!/bin/sh
 set -e
-set -x
+#et -x
 
 OUT=dist
 

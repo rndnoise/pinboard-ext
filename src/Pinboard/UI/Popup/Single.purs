@@ -2,15 +2,15 @@ module Pinboard.UI.Popup.Single where
 
 import Prelude
 import Data.Array                 (uncons)
-import Data.Maybe                 (Maybe(..), fromMaybe, isJust)
 import Data.DateTime              (DateTime)
 import Data.Either                (Either(..), either)
+import Data.Maybe                 (Maybe(..), fromMaybe, isJust)
 import Data.Newtype               (class Newtype, wrap, unwrap)
 import Data.Monoid                (guard)
 import Data.Formatter.DateTime    (formatDateTime)
 import Control.Monad.Aff.Class    (class MonadAff)
 import Control.Monad.Jax.Class    (class MonadJax)
-import Control.Monad.Reader.Class (class MonadAsk)
+import Control.Monad.Reader.Trans (runReaderT)
 import Control.Monad.Trans.Class  (lift)
 import Control.Monad.Eff.Now      (NOW, nowDateTime)
 import Control.Comonad            (extract)
@@ -28,9 +28,9 @@ import Control.Monad.Aff.AVar   (AVAR)
 
 import Pinboard.UI.Internal.HTML      (class_)
 import Pinboard.UI.Component.TagInput as TI
+import Pinboard.Config                as CF
 import Pinboard.API
-  ( AuthToken
-  , Post
+  ( Post
   , Error(..)
   , postsGet
   , postsAdd
@@ -87,12 +87,10 @@ component
   :: forall i e m
    . MonadAff (ajax :: AJAX, avar :: AVAR, dom :: DOM, now :: NOW | e) m
   => MonadJax m
-  => MonadAsk AuthToken m
   => Eq i
-  => TI.Config i m
-  -> (i -> String)
+  => CF.Config i m
   -> H.Component HH.HTML (Query i) Input Output m
-component cfg encodeTag =
+component cfg =
   H.lifecycleParentComponent
   { initialState
   , render
@@ -133,7 +131,7 @@ component cfg encodeTag =
 
         , HH.label [class_ "select"]
           [ HH.text "Tags:"
-          , HH.slot TagSlot (TI.component cfg) unit (HE.input FromTagInput) ]
+          , HH.slot TagSlot (TI.component cfg.tags) unit (HE.input FromTagInput) ]
 
         , HH.label [class_ "textarea"]
           [ HH.text "Description:"
@@ -172,7 +170,8 @@ component cfg encodeTag =
       Init k -> k <$ do
         H.modify (message "Checking...")
         url <- H.gets (_.url <<< unwrap)
-        res <- lift $ postsGet (getOptions { url = Just url })
+        res <- lift $ flip runReaderT cfg.authToken
+                        (postsGet (getOptions { url = Just url }))
         eval (ApiPostGet res k)
 
       -- user interaction events
@@ -181,12 +180,13 @@ component cfg encodeTag =
         H.modify (message "Saving...")
 
         s   <- H.gets unwrap
-        res <- lift $ postsAdd s.url s.title (addOptions
-                               { extended = Just s.desc
-                               , tags     = Just s.tags
-                               , replace  = Just true
-                               , shared   = Just false
-                               , toRead   = Just s.toRead })
+        res <- lift $ flip runReaderT cfg.authToken
+                        (postsAdd s.url s.title (addOptions
+                          { extended = Just s.desc
+                          , tags     = Just s.tags
+                          , replace  = Just true
+                          , shared   = Just false
+                          , toRead   = Just s.toRead }))
         eval (ApiPostAdd res k)
 
       Delete e k -> k <$ do
@@ -194,7 +194,7 @@ component cfg encodeTag =
         H.modify (message "Deleting...")
 
         url <- H.gets (_.url <<< unwrap)
-        res <- lift (postsDelete url)
+        res <- lift (runReaderT (postsDelete url) cfg.authToken)
         eval (ApiPostDelete res k)
 
       ApiPostGet res k -> k <$ unwrapResponse res \ps -> do
@@ -203,7 +203,7 @@ component cfg encodeTag =
             H.modify (message "New bookmark")
 
           Just {head,tail} -> do
-            _ <- H.query TagSlot $ H.action (TI.SetChosen (map (cfg.parse) head.tags))
+            _ <- H.query TagSlot $ H.action (TI.SetChosen (map cfg.tags.parse head.tags))
 
             let fmt = either id id <<< formatDateTime "MMM DD, YYYY"
             H.modify (message ("First bookmarked " <> fmt head.time))
@@ -229,7 +229,7 @@ component cfg encodeTag =
 
       FromTagInput o k -> k <$
         case o of
-          TI.OnChosen x -> H.modify (state (_ { tags = map encodeTag x }))
+          TI.OnChosen xs -> H.modify (state (_ { tags = map cfg.tags.textValue xs }))
 
 
 unwrapResponse :: forall i m a. Either Error a -> (a -> DSL i m Unit) -> DSL i m Unit

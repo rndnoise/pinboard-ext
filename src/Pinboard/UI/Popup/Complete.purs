@@ -27,6 +27,7 @@ import Control.Alt                ((<|>))
 import Control.Plus               (empty)
 import Control.Monad.Writer.Trans (WriterT, execWriterT, tell)
 
+
 type Search w a = WriterT w Seq a
 
 
@@ -42,6 +43,7 @@ data Part
   | L String
     -- ^ Sequence of non-symbols
 
+
 derive instance eqPart :: Eq Part
 derive instance gPart :: Generic Part _
 instance showPart :: Show Part where show = genericShow
@@ -55,9 +57,11 @@ data Span
   | U String
     -- ^ Sequence of characters that do not match the query
 
+
 derive instance eqSpan :: Eq Span
 derive instance gSpan :: Generic Span _
 instance showSpan :: Show Span where show = genericShow
+
 
 -- |
 commonSubsequences :: Array String -> String -> Array (Tuple String (Seq Result))
@@ -114,6 +118,7 @@ commonSubsequences ts_ =
         op (Cons (M "") bs)              = op bs
         op (Cons (U "") bs)              = op bs
         op (Cons a bs)                   = a : op bs
+
 
 -- |
 parse :: String -> Split

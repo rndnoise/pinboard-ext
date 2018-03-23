@@ -9,7 +9,7 @@ import Data.Filterable            (filterMap)
 import Data.TraversableWithIndex  (forWithIndex)
 import Control.Monad.Aff.Class    (class MonadAff)
 import Control.Monad.Jax.Class    (class MonadJax)
-import Control.Monad.Reader.Class (class MonadAsk)
+import Control.Monad.Reader.Trans (runReaderT)
 import Control.Monad.Trans.Class  (lift)
 import Network.HTTP.Affjax        (AJAX)
 import DOM                        (DOM)
@@ -22,9 +22,10 @@ import Halogen.HTML.Events        as HE
 import Halogen.HTML.Properties    as HP
 
 import Chrome.Tabs.Tab                as CT
-import Pinboard.API                   (AuthToken, Error(..), postsAdd, addOptions)
+import Pinboard.API                   (Error(..), postsAdd, addOptions)
 import Pinboard.UI.Internal.HTML      (class_)
 import Pinboard.UI.Component.TagInput as TI
+import Pinboard.Config                as CF
 
 -------------------------------------------------------------------------------
 
@@ -79,12 +80,10 @@ component
   :: forall i e m
    . MonadAff (HA.HalogenEffects (ajax :: AJAX | e)) m
   => MonadJax m
-  => MonadAsk AuthToken m
   => Eq i
-  => TI.Config i m
-  -> (i -> String)
+  => CF.Config i m
   -> H.Component HH.HTML (Query i) Input Output m
-component cfg encodeTag =
+component cfg =
   H.parentComponent
   { initialState
   , render
@@ -113,7 +112,7 @@ component cfg encodeTag =
       , HH.div [class_ "upper"]
         [ HH.label [class_ "select"]
           [ HH.text "Tags:"
-          , HH.slot TagSlot (TI.component cfg) unit (HE.input FromTagWidget) ]
+          , HH.slot TagSlot (TI.component cfg.tags) unit (HE.input FromTagWidget) ]
 
         , HH.label [class_ "checkbox"]
           [ HH.input
@@ -178,11 +177,11 @@ component cfg encodeTag =
           when (t.chosen && t.status == Idle) $ unit <$ H.fork do
             H.modify (updateTab n (_ { status = Waiting }))
 
-            res <- lift $ postsAdd t.url t.title (addOptions
+            res <- lift $ runReaderT (postsAdd t.url t.title (addOptions
                     { tags    = Just s.tags
                     , replace = Just s.replace
                     , shared  = Just (not s.private)
-                    , toRead  = Just s.toRead })
+                    , toRead  = Just s.toRead })) cfg.authToken
 
             eval (ApiPostAdd n res k)
 
@@ -205,13 +204,14 @@ component cfg encodeTag =
         case res of
              Right x -> H.modify (updateTab n (_ { status = Success }))
              Left x  -> let msg = case x of
-                                       ServerError msg -> "Server: " <> msg
-                                       DecodeError msg -> "JSON: "   <> msg
+                                       ServerError m -> "Server: " <> m
+                                       DecodeError m -> "JSON: "   <> m
                          in H.modify (updateTab n (_ { status = Error msg }))
 
       FromTagWidget o k -> k <$
         case o of
-          TI.OnChosen value -> H.modify (over State (_ { tags = map encodeTag value }))
+          TI.OnChosen xs -> do
+            H.modify (over State (_ { tags = map cfg.tags.textValue xs }))
 
 
 updateTab :: Int -> (Tab -> Tab) -> State -> State

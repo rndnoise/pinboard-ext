@@ -1,32 +1,36 @@
 module Pinboard.UI.Popup.Single where
 
 import Prelude
-import Data.Array               (uncons)
-import Data.Maybe               (Maybe(..), fromMaybe, isJust)
-import Data.DateTime            (DateTime)
-import Data.Either              (Either(..), either)
-import Data.Newtype             (class Newtype, wrap, unwrap)
-import Data.Monoid              (guard)
-import Data.Formatter.DateTime  (formatDateTime)
-import Control.Monad.Aff.Class  (class MonadAff)
-import Control.Monad.Eff.Now    (NOW, nowDateTime)
-import Control.Comonad          (extract)
-import Network.HTTP.Affjax      (AJAX)
-import DOM                      (DOM)
-import DOM.Event.Event          as E
-import DOM.Event.Types          as ET
-import Halogen                  as H
-import Halogen.HTML             as HH
-import Halogen.HTML.Events      as HE
-import Halogen.HTML.Properties  as HP
+import Data.Array                 (uncons)
+import Data.Maybe                 (Maybe(..), fromMaybe, isJust)
+import Data.DateTime              (DateTime)
+import Data.Either                (Either(..), either)
+import Data.Newtype               (class Newtype, wrap, unwrap)
+import Data.Monoid                (guard)
+import Data.Formatter.DateTime    (formatDateTime)
+import Control.Monad.Aff.Class    (class MonadAff)
+import Control.Monad.Jax.Class    (class MonadJax)
+import Control.Monad.Reader.Class (class MonadAsk)
+import Control.Monad.Trans.Class  (lift)
+import Control.Monad.Eff.Now      (NOW, nowDateTime)
+import Control.Comonad            (extract)
+import Network.HTTP.Affjax        (AJAX)
+import DOM                        (DOM)
+import DOM.Event.Event            as E
+import DOM.Event.Types            as ET
+import Halogen                    as H
+import Halogen.HTML               as HH
+import Halogen.HTML.Events        as HE
+import Halogen.HTML.Properties    as HP
 
 import Chrome.Tabs.Tab          (Tab, title, url) as CT
 import Control.Monad.Aff.AVar   (AVAR)
 
 import Pinboard.UI.Internal.HTML      (class_)
 import Pinboard.UI.Component.TagInput as TI
-import Pinboard.API 
-  ( Post
+import Pinboard.API
+  ( AuthToken
+  , Post
   , Error(..)
   , postsGet
   , postsAdd
@@ -82,6 +86,8 @@ type DSL i m  = H.ParentDSL State (Query i) (TI.Query i) Slot Output m
 component
   :: forall i e m
    . MonadAff (ajax :: AJAX, avar :: AVAR, dom :: DOM, now :: NOW | e) m
+  => MonadJax m
+  => MonadAsk AuthToken m
   => Eq i
   => TI.Config i m
   -> (i -> String)
@@ -114,16 +120,14 @@ component cfg encodeTag =
         [ HH.label [class_ "text"]
           [ HH.text "URL:"
           , HH.input
-            [ HP.id_ "url"
-            , HP.type_ HP.InputUrl
+            [ HP.type_ HP.InputUrl
             , HP.value s.url
             , HE.onValueInput (HE.input OnUrl) ] ]
 
         , HH.label [class_ "text"]
           [ HH.text "Title:"
           , HH.input
-            [ HP.id_ "title"
-            , HP.type_ HP.InputText
+            [ HP.type_ HP.InputText
             , HP.value s.title
             , HE.onValueInput (HE.input OnTitle) ] ]
 
@@ -134,22 +138,19 @@ component cfg encodeTag =
         , HH.label [class_ "textarea"]
           [ HH.text "Description:"
           , HH.textarea
-            [ HP.id_ "desc"
-            , HP.value s.desc
+            [ HP.value s.desc
             , HE.onValueInput (HE.input OnDesc) ] ]
 
         , HH.label [class_ "checkbox"]
           [ HH.input
-            [ HP.id_ "toread"
-            , HP.type_ HP.InputCheckbox
+            [ HP.type_ HP.InputCheckbox
             , HP.checked s.toRead
             , HE.onChecked (HE.input OnToRead) ]
           , HH.text "Read later" ]
 
         , HH.label [class_ "checkbox"]
           [ HH.input
-            [ HP.id_ "private"
-            , HP.type_ HP.InputCheckbox
+            [ HP.type_ HP.InputCheckbox
             , HP.checked s.private
             , HE.onChecked (HE.input OnPrivate) ]
           , HH.text "Private" ] ]
@@ -171,7 +172,7 @@ component cfg encodeTag =
       Init k -> k <$ do
         H.modify (message "Checking...")
         url <- H.gets (_.url <<< unwrap)
-        res <- H.liftAff $ postsGet (getOptions { url = Just url })
+        res <- lift $ postsGet (getOptions { url = Just url })
         eval (ApiPostGet res k)
 
       -- user interaction events
@@ -180,12 +181,12 @@ component cfg encodeTag =
         H.modify (message "Saving...")
 
         s   <- H.gets unwrap
-        res <- H.liftAff $ postsAdd s.url s.title (addOptions
-                                    { extended = Just s.desc
-                                    , tags     = Just s.tags
-                                    , replace  = Just true
-                                    , shared   = Just false
-                                    , toRead   = Just s.toRead })
+        res <- lift $ postsAdd s.url s.title (addOptions
+                               { extended = Just s.desc
+                               , tags     = Just s.tags
+                               , replace  = Just true
+                               , shared   = Just false
+                               , toRead   = Just s.toRead })
         eval (ApiPostAdd res k)
 
       Delete e k -> k <$ do
@@ -193,7 +194,7 @@ component cfg encodeTag =
         H.modify (message "Deleting...")
 
         url <- H.gets (_.url <<< unwrap)
-        res <- H.liftAff $ postsDelete url
+        res <- lift (postsDelete url)
         eval (ApiPostDelete res k)
 
       ApiPostGet res k -> k <$ unwrapResponse res \ps -> do

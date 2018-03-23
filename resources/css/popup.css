@@ -16,10 +16,6 @@ button
 { float: right;
   margin: 0 0 0 1rem; }
 
-button:active
-{ color: #fff;
-  background-color: #117bf3; }
-
 .multi-icon,
 .single-icon
 { width: 32px;

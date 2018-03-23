@@ -1,26 +1,29 @@
 module Pinboard.UI.Popup where
 
 import Prelude
-import Data.Array               (elem, filter, find)
-import Data.List                (List(Nil), toUnfoldable)
-import Data.Either              (Either(..))
-import Data.Maybe               (Maybe(..), fromMaybe)
-import Data.Sequence            (head)
-import Data.Tuple               (Tuple(..), fst, snd)
-import Data.Time.Duration       (Milliseconds(..))
-import Data.Newtype             (class Newtype, over)
-import DOM                      (DOM)
-import Control.Monad.Aff.Class  (class MonadAff)
-import Control.Monad.Eff        (Eff)
-import Control.Monad.Eff.Now    (NOW)
-import Control.Monad.Aff.AVar   (AVAR)
-import Network.HTTP.Affjax      (AJAX)
-import Halogen                  as H
-import Halogen.Aff              as HA
-import Halogen.HTML             as HH
-import Halogen.HTML.Events      as HE
-import Halogen.HTML.Properties  as HP
-import Halogen.VDom.Driver      as HV
+import Data.Array                 (elem, filter, find)
+import Data.List                  (List(Nil), toUnfoldable)
+import Data.Either                (Either(..))
+import Data.Maybe                 (Maybe(..), fromMaybe)
+import Data.Sequence              (head)
+import Data.Tuple                 (Tuple(..), fst, snd)
+import Data.Time.Duration         (Milliseconds(..))
+import Data.Newtype               (class Newtype, over)
+import DOM                        (DOM)
+import Control.Monad.Aff.Class    (class MonadAff)
+import Control.Monad.Jax.Class    (class MonadJax)
+import Control.Monad.Eff          (Eff)
+import Control.Monad.Eff.Now      (NOW)
+import Control.Monad.Reader.Class (class MonadAsk)
+import Control.Monad.Reader.Trans (runReaderT)
+import Control.Monad.Trans.Class  (lift)
+import Network.HTTP.Affjax        (AJAX)
+import Halogen                    as H
+import Halogen.Aff                as HA
+import Halogen.HTML               as HH
+import Halogen.HTML.Events        as HE
+import Halogen.HTML.Properties    as HP
+import Halogen.VDom.Driver        as HV
 
 import Halogen.Component.ChildPath    as CP
 import Data.Either.Nested             (Either2)
@@ -29,6 +32,9 @@ import Data.Functor.Coproduct.Nested  (Coproduct2)
 import Chrome.FFI                     (CHROME)
 import Chrome.Tabs                    (Tab, query, queryOptions) as CT
 import Chrome.Tabs.Tab                (active) as CT
+import Chrome.Storage.Local           as LS
+
+import Pinboard.API                   (AuthToken)
 import Pinboard.UI.Internal.HTML      (class_, classes)
 import Pinboard.UI.Component.TagInput as TI
 import Pinboard.UI.Popup.Complete     as CC
@@ -37,8 +43,17 @@ import Pinboard.UI.Popup.Single       as PS
 
 -------------------------------------------------------------------------------
 
-cfg :: forall m. Applicative m => TI.Config (Tuple String CC.Result) m
-cfg =
+
+main :: Eff (HA.HalogenEffects (ajax :: AJAX, chrome :: CHROME, now :: NOW)) Unit
+main = HA.runHalogenAff do
+  body <- HA.awaitBody
+  tabs <- CT.query (CT.queryOptions { currentWindow = Just true })
+  _    <- HV.runUI (H.hoist (flip runReaderT "") component) tabs body
+  pure unit
+
+
+tagCfg :: forall m. Applicative m => TI.Config (Tuple String CC.Result) m
+tagCfg =
   { parse:        flip Tuple Nil
   , renderChoice: HH.text <<< fst
   , renderOption: HH.span_ <<< toUnfoldable <<< map fmt <<< snd
@@ -52,12 +67,6 @@ cfg =
     fmt (CC.M s) = HH.span [ class_ "matched "] [HH.text s]
     fmt (CC.U s) = HH.span [ class_ "unmatch "] [HH.text s]
 
-main :: Eff (HA.HalogenEffects (ajax :: AJAX, chrome :: CHROME, now :: NOW)) Unit
-main = HA.runHalogenAff do
-  body <- HA.awaitBody
-  tabs <- CT.query (CT.queryOptions { currentWindow = Just true })
-  _    <- HV.runUI component tabs body
-  pure unit
 
 -------------------------------------------------------------------------------
 
@@ -84,8 +93,10 @@ type HTML m = H.ParentHTML Query Query' Slot m
 type DSL m  = H.ParentDSL State Query Query' Slot Output m
 
 component
-  :: forall e m
-   . MonadAff (ajax :: AJAX, avar :: AVAR, dom :: DOM, now :: NOW | e) m
+  :: forall eff m
+   . MonadAff (HA.HalogenEffects (ajax :: AJAX, now :: NOW | eff)) m
+  => MonadAsk AuthToken m
+  => MonadJax m
   => H.Component HH.HTML Query Input Output m
 component =
   H.parentComponent
@@ -113,10 +124,10 @@ component =
           , HE.onClick (HE.input_ OnClickSingle) ]
       , HH.div
           [ classes [ toggle multi, "multi" ] ]
-          [ HH.slot' CP.cp1 unit (PM.component cfg fst) s.allTabs absurd ]
+          [ HH.slot' CP.cp1 unit (PM.component tagCfg fst) s.allTabs absurd ]
       , HH.div
           [ classes [ toggle single, "single" ] ]
-          [ HH.slot' CP.cp2 unit (PS.component cfg fst) s.oneTab absurd ] ]
+          [ HH.slot' CP.cp2 unit (PS.component tagCfg fst) s.oneTab absurd ] ]
       where
         toggle x = if s.active == x then "active" else "dormant"
 

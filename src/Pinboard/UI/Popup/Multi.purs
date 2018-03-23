@@ -7,19 +7,22 @@ import Data.Maybe                 (Maybe(..), fromMaybe)
 import Data.Newtype               (class Newtype, over, unwrap)
 import Data.Filterable            (filterMap)
 import Data.TraversableWithIndex  (forWithIndex)
-import Control.Monad.Aff.AVar     (AVAR)
 import Control.Monad.Aff.Class    (class MonadAff)
+import Control.Monad.Jax.Class    (class MonadJax)
+import Control.Monad.Reader.Class (class MonadAsk)
+import Control.Monad.Trans.Class  (lift)
 import Network.HTTP.Affjax        (AJAX)
 import DOM                        (DOM)
 import DOM.Event.Event            as E
 import DOM.Event.Types            as ET
 import Halogen                    as H
+import Halogen.Aff                as HA
 import Halogen.HTML               as HH
 import Halogen.HTML.Events        as HE
 import Halogen.HTML.Properties    as HP
 
 import Chrome.Tabs.Tab                as CT
-import Pinboard.API                   (Error(..), postsAdd, addOptions)
+import Pinboard.API                   (AuthToken, Error(..), postsAdd, addOptions)
 import Pinboard.UI.Internal.HTML      (class_)
 import Pinboard.UI.Component.TagInput as TI
 
@@ -74,7 +77,9 @@ type DSL i m  = H.ParentDSL State (Query i) (TI.Query i) Slot Output m
 
 component
   :: forall i e m
-   . MonadAff (ajax :: AJAX, avar :: AVAR, dom :: DOM | e) m
+   . MonadAff (HA.HalogenEffects (ajax :: AJAX | e)) m
+  => MonadJax m
+  => MonadAsk AuthToken m
   => Eq i
   => TI.Config i m
   -> (i -> String)
@@ -112,24 +117,21 @@ component cfg encodeTag =
 
         , HH.label [class_ "checkbox"]
           [ HH.input
-            [ HP.id_ "toread"
-            , HP.type_ HP.InputCheckbox
+            [ HP.type_ HP.InputCheckbox
             , HP.checked true
             , HE.onChecked (HE.input OnToRead) ]
           , HH.text "Read later" ]
 
         , HH.label [class_ "checkbox"]
           [ HH.input
-            [ HP.id_ "private"
-            , HP.type_ HP.InputCheckbox
+            [ HP.type_ HP.InputCheckbox
             , HP.checked true
             , HE.onChecked (HE.input OnPrivate) ]
           , HH.text "Private" ]
 
         , HH.label [class_ "checkbox"]
           [ HH.input
-            [ HP.id_ "replace"
-            , HP.type_ HP.InputCheckbox
+            [ HP.type_ HP.InputCheckbox
             , HP.checked true
             , HE.onChecked (HE.input OnReplace) ]
           , HH.text "Replace" ]
@@ -148,8 +150,7 @@ component cfg encodeTag =
               [ case t.status of
                      Idle ->
                        HH.input
-                       [ HP.id_ ("t" <> show n)
-                       , HP.type_ HP.InputCheckbox
+                       [ HP.type_ HP.InputCheckbox
                        , HP.checked t.chosen
                        , HE.onChecked (HE.input (OnCheck n)) ]
                      Waiting -> HH.img [class_ "status", HP.src "img/three.svg"]
@@ -177,7 +178,7 @@ component cfg encodeTag =
           when (t.chosen && t.status == Idle) $ unit <$ H.fork do
             H.modify (updateTab n (_ { status = Waiting }))
 
-            res <- H.liftAff $ postsAdd t.url t.title (addOptions
+            res <- lift $ postsAdd t.url t.title (addOptions
                     { tags    = Just s.tags
                     , replace = Just s.replace
                     , shared  = Just (not s.private)

@@ -22,7 +22,8 @@ import Prelude
 import Control.Monad.Jax.Class    (class MonadJax, affjax)
 import Control.Monad.Reader.Class (class MonadAsk, ask)
 import Data.Argonaut.Core         (Json, fromString)
-import Data.Either                (Either(..))
+import Data.Argonaut.Parser       as J
+import Data.Either                (Either(..), either)
 import Data.Maybe                 (Maybe(..))
 import Data.Tuple                 (Tuple(..))
 import Data.DateTime              (DateTime)
@@ -83,7 +84,8 @@ postsUpdate = decode <$> (affjax =<< makeReq_ "posts/update")
   where
     decode r = do
       _ <- validateStatus r.status
-      o <- decodeObject root r.response
+      j <- jsonParser r.response
+      o <- decodeObject root j
       decodePropWith decodeDate "update_time" o
 
 
@@ -98,10 +100,14 @@ postsAdd
   -> m (Either Error Unit)
 postsAdd url description options = decode <$> (affjax =<< makeReq "posts/add" query)
   where
-    decode r = validateStatus r.status *> validateCode "result_code" r.response
-    query    = toQuery [ Tuple "url" url
-                       , Tuple "description" description
-                       ] <> toQuery (AddOptions' options)
+    decode r = do
+      _ <- validateStatus r.status
+      j <- jsonParser r.response
+      validateCode "result_code" j
+
+    query = toQuery [ Tuple "url" url
+                    , Tuple "description" description
+                    ] <> toQuery (AddOptions' options)
 
 
 -- | Delete a bookmark.
@@ -112,7 +118,11 @@ postsDelete
   => Url
   -> m (Either Error Unit)
 postsDelete url = decode <$> (affjax =<< makeReq "posts/delete" (Tuple "url" url))
-  where decode r = validateStatus r.status *> validateCode "result_code" r.response
+  where
+    decode r = do
+      validateStatus r.status
+      j <- jsonParser r.response
+      validateCode "result_code" j
 
 
 -- | Returns one or more posts on a single day matching the arguments. If
@@ -127,7 +137,8 @@ postsGet options = decode <$> (affjax =<< makeReq "posts/get" (GetOptions' optio
   where
     decode r = do
       _ <- validateStatus r.status
-      o <- decodeObject root r.response
+      j <- jsonParser r.response
+      o <- decodeObject root j
       decodePropWith decodePosts "posts" o
 
 
@@ -140,7 +151,11 @@ postsRecent
   -> m (Either Error (Array Post))
 postsRecent options =
   decode <$> (affjax =<< makeReq "posts/recent" (RecentOptions' options))
-  where decode r = validateStatus r.status *> decodePosts root r.response
+  where
+    decode r = do
+      validateStatus r.status
+      j <- jsonParser r.response
+      decodePosts root j
 
 
 -- | Returns a list of dates with the number of posts at each date.
@@ -155,8 +170,10 @@ postsDates options =
   where
     decode r = do
       _ <- validateStatus r.status
-      o <- decodeObject root r.response
+      j <- jsonParser r.response
+      o <- decodeObject root j
       traverse op (toArrayWithKey Tuple o)
+
     op (Tuple k v) =
       Tuple <$> decodeDate root (fromString k)
             <*> decodeNumber root v
@@ -170,7 +187,11 @@ postsAll
   => AllOptions
   -> m (Either Error (Array Post))
 postsAll options = decode <$> (affjax =<< makeReq "posts/all" (AllOptions' options))
-  where decode r = validateStatus r.status *> decodePosts root r.response
+  where
+    decode r = do
+      _ <- validateStatus r.status
+      j <- jsonParser r.response
+      decodePosts root j
 
 
 -- | Returns a list of popular tags and recommended tags for a given URL.
@@ -186,7 +207,8 @@ postsSuggest url = decode <$> (affjax =<< makeReq "posts/suggest" (Tuple "url" u
   where
     decode r = do
       _ <- validateStatus r.status
-      o <- decodeObject root r.response
+      j <- jsonParser r.response
+      o <- decodeObject root j
       { popular: _, recommended: _ } <$>
         decodePropWith
           (\name x -> traverse (decodeString name) =<< decodeArray name x)
@@ -207,7 +229,8 @@ tagsGet = decode <$> (affjax =<< makeReq_ "tags/get")
   where
     decode r = do
       _ <- validateStatus r.status
-      o <- decodeObject root r.response
+      j <- jsonParser r.response
+      o <- decodeObject root j
       traverse op (toArrayWithKey Tuple o)
     op (Tuple k v) = Tuple k <$> decodeNumber root v
 
@@ -220,7 +243,11 @@ tagsDelete
   => Tag
   -> m (Either Error Unit)
 tagsDelete tag = decode <$> (affjax =<< makeReq "tags/delete" (Tuple "tag" tag))
-  where decode r = validateStatus r.status *> validateCode "result" r.response
+  where
+    decode r = do
+      _ <- validateStatus r.status
+      j <- jsonParser r.response
+      validateCode "result" j
 
 
 -- | Rename an tag, or fold it in to an existing tag.
@@ -234,7 +261,10 @@ tagsRename
 tagsRename (Old old) (New new) = decode <$> (affjax =<< makeReq "tags/rename" query)
   where
     query    = [Tuple "old" old, Tuple "new" new]
-    decode r = validateStatus r.status *> validateCode "result" r.response
+    decode r = do
+      _ <- validateStatus r.status
+      j <- jsonParser r.response
+      validateCode "result" j
 
 
 -- | Returns the user's secret RSS key (for viewing private feeds).
@@ -247,7 +277,8 @@ userSecret = decode <$> (affjax =<< makeReq_ "user/secret")
   where
     decode r = do
       _ <- validateStatus r.status
-      o <- decodeObject root r.response
+      j <- jsonParser r.response
+      o <- decodeObject root j
       decodePropWith decodeString "result" o
 
 
@@ -261,7 +292,8 @@ userApiToken = decode <$> (affjax =<< makeReq_ "user/api_token")
   where
     decode r = do
       _ <- validateStatus r.status
-      o <- decodeObject root r.response
+      j <- jsonParser r.response
+      o <- decodeObject root j
       decodePropWith decodeString "result" o
 
 
@@ -275,7 +307,8 @@ notesList = decode <$> (affjax =<< makeReq_ "notes/list")
   where
     decode r = do
       _ <- validateStatus r.status
-      o <- decodeObject root r.response
+      j <- jsonParser r.response
+      o <- decodeObject root j
       n <- decodePropWith decodeArray "notes" o
       traverse decodeNote n
     decodeNote x = do
@@ -301,7 +334,8 @@ notesGet id = decode <$> (affjax =<< makeReq_ ("notes/" <> id))
   where
     decode r = do
       _ <- validateStatus r.status
-      o <- decodeObject root r.response
+      j <- jsonParser r.response
+      o <- decodeObject root j
       { id: _, text: _, hash: _, title: _, length: _, createdAt: _, updatedAt: _ } <$>
         decodePropWith decodeString "id" o          <*>
         decodePropWith decodeString "text" o        <*>
@@ -351,6 +385,9 @@ validateCode name x = do
   if z == "done"
     then Right unit
     else Left (ServerError z)
+
+jsonParser :: String -> Either Error Json
+jsonParser = either (Left <<< DecodeError) Right <<< J.jsonParser
 
 root :: Name
 root = Just "<root>"

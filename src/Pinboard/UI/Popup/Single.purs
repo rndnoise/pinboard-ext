@@ -5,9 +5,10 @@ import Data.Array                 (uncons)
 import Data.DateTime              (DateTime)
 import Data.Either                (Either(..), either)
 import Data.Maybe                 (Maybe(..), fromMaybe, isJust)
-import Data.Newtype               (class Newtype, wrap, unwrap)
+import Data.Newtype               (class Newtype, over, unwrap, wrap)
 import Data.Monoid                (guard)
 import Data.Formatter.DateTime    (formatDateTime)
+import Data.Tuple                 (Tuple(..))
 import Control.Monad.Aff.Class    (class MonadAff)
 import Control.Monad.Jax.Class    (class MonadJax)
 import Control.Monad.Reader.Trans (runReaderT)
@@ -26,9 +27,9 @@ import Halogen.HTML.Properties    as HP
 import Chrome.Tabs.Tab          (Tab, title, url) as CT
 import Control.Monad.Aff.AVar   (AVAR)
 
-import Pinboard.UI.Internal.HTML      (class_)
+import Pinboard.Config                (Config)
 import Pinboard.UI.Component.TagInput as TI
-import Pinboard.Config                as CF
+import Pinboard.UI.Internal.HTML      (class_)
 import Pinboard.API
   ( Post
   , Error(..)
@@ -40,29 +41,31 @@ import Pinboard.API
 
 -------------------------------------------------------------------------------
 
-newtype State = State
+newtype State i m = State
   { title       :: String
   , url         :: String
   , desc        :: String
   , tags        :: Array String
-  , toRead      :: Boolean
+  , readLater   :: Boolean
   , private     :: Boolean
   , time        :: Maybe DateTime
+  , config      :: Config i m
   , status      :: Status }
 
-derive instance newtypeState :: Newtype State _
+derive instance newtypeState :: Newtype (State i m) _
 
 data Status
   = Error String
   | Normal String
   | Success String
 
-data Query i k
+data Query i m k
   = Init k
+  | Recv (Input i m) k
   | OnUrl String k
   | OnTitle String k
   | OnDesc String k
-  | OnToRead Boolean k
+  | OnReadLater Boolean k
   | OnPrivate Boolean k
   | Save ET.MouseEvent k
   | Delete ET.MouseEvent k
@@ -71,15 +74,15 @@ data Query i k
   | ApiPostDelete (Either Error Unit) k
   | FromTagInput (TI.Output i) k
 
-type Input  = Maybe CT.Tab
-type Output = Void
+type Input i m = Tuple (Config i m) (Maybe CT.Tab)
+type Output    = Void
 
 data Slot = TagSlot
 derive instance eqSlot  :: Eq Slot
 derive instance ordSlot :: Ord Slot
 
-type HTML i m = H.ParentHTML (Query i) (TI.Query i) Slot m
-type DSL i m  = H.ParentDSL State (Query i) (TI.Query i) Slot Output m
+type HTML i m = H.ParentHTML (Query i m) (TI.Query i) Slot m
+type DSL i m  = H.ParentDSL (State i m) (Query i m) (TI.Query i) Slot Output m
 
 -------------------------------------------------------------------------------
 
@@ -88,9 +91,8 @@ component
    . MonadAff (ajax :: AJAX, avar :: AVAR, dom :: DOM, now :: NOW | e) m
   => MonadJax m
   => Eq i
-  => CF.Config i m
-  -> H.Component HH.HTML (Query i) Input Output m
-component cfg =
+  => H.Component HH.HTML (Query i m) (Input i m) Output m
+component =
   H.lifecycleParentComponent
   { initialState
   , render
@@ -99,18 +101,20 @@ component cfg =
   , finalizer:   Nothing
   , initializer: Just (H.action Init) }
   where
-    initialState :: Input -> State
-    initialState t = State
-      { title       : fromMaybe "" (CT.title =<< t)
-      , url         : fromMaybe "" (CT.url   =<< t)
-      , desc        : ""
-      , tags        : []
-      , toRead      : false
-      , private     : true
-      , time        : Nothing
-      , status      : Normal "" }
+    initialState :: Input i m -> State i m
+    initialState (Tuple config tab) =
+      State
+      { title:      fromMaybe "" (CT.title =<< tab)
+      , url:        fromMaybe "" (CT.url   =<< tab)
+      , desc:       ""
+      , tags:       []
+      , readLater:  config.defaults.readLater
+      , private:    config.defaults.private
+      , time:       Nothing
+      , status:     Normal ""
+      , config }
 
-    render :: State -> HTML i m
+    render :: State i m -> HTML i m
     render (State s) =
       HH.form [HP.id_ "single"]
       [ renderStatus s.status
@@ -131,7 +135,7 @@ component cfg =
 
         , HH.label [class_ "select"]
           [ HH.text "Tags:"
-          , HH.slot TagSlot (TI.component cfg.tags) unit (HE.input FromTagInput) ]
+          , HH.slot TagSlot (TI.component s.config.tags) unit (HE.input FromTagInput) ]
 
         , HH.label [class_ "textarea"]
           [ HH.text "Description:"
@@ -142,8 +146,8 @@ component cfg =
         , HH.label [class_ "checkbox"]
           [ HH.input
             [ HP.type_ HP.InputCheckbox
-            , HP.checked s.toRead
-            , HE.onChecked (HE.input OnToRead) ]
+            , HP.checked s.readLater
+            , HE.onChecked (HE.input OnReadLater) ]
           , HH.text "Read later" ]
 
         , HH.label [class_ "checkbox"]
@@ -165,36 +169,40 @@ component cfg =
         renderStatus (Normal x) = HH.div [class_ "status light"] [ HH.text x ]
         renderStatus (Success x) = HH.div [class_ "status success"] [ HH.text x ]
 
-    eval :: Query i ~> DSL i m
+    eval :: Query i m ~> DSL i m
     eval q = case q of
       Init k -> k <$ do
         H.modify (message "Checking...")
-        url <- H.gets (_.url <<< unwrap)
-        res <- lift $ flip runReaderT cfg.authToken
-                        (postsGet (getOptions { url = Just url }))
+
+        State s <- H.get
+        res     <- lift $ flip runReaderT s.config.authToken
+                            (postsGet (getOptions { url = Just s.url }))
         eval (ApiPostGet res k)
+
+      Recv (Tuple config _) k -> k <$ do
+        H.modify (over State (_ { config = config }))
 
       -- user interaction events
       Save e k -> k <$ do
         noBubble e
         H.modify (message "Saving...")
 
-        s   <- H.gets unwrap
-        res <- lift $ flip runReaderT cfg.authToken
-                        (postsAdd s.url s.title (addOptions
-                          { extended = Just s.desc
-                          , tags     = Just s.tags
-                          , replace  = Just true
-                          , shared   = Just false
-                          , toRead   = Just s.toRead }))
+        State s <- H.get
+        res     <- lift $ flip runReaderT s.config.authToken
+                            (postsAdd s.url s.title (addOptions
+                              { extended  = Just s.desc
+                              , tags      = Just s.tags
+                              , replace   = Just true
+                              , shared    = Just false
+                              , toread    = Just s.readLater }))
         eval (ApiPostAdd res k)
 
       Delete e k -> k <$ do
         noBubble e
         H.modify (message "Deleting...")
 
-        url <- H.gets (_.url <<< unwrap)
-        res <- lift (runReaderT (postsDelete url) cfg.authToken)
+        State s <- H.get
+        res     <- lift (runReaderT (postsDelete s.url) s.config.authToken)
         eval (ApiPostDelete res k)
 
       ApiPostGet res k -> k <$ unwrapResponse res \ps -> do
@@ -203,16 +211,17 @@ component cfg =
             H.modify (message "New bookmark")
 
           Just {head,tail} -> do
-            _ <- H.query TagSlot $ H.action (TI.SetChosen (map cfg.tags.parse head.tags))
+            State s <- H.get
+            _       <- H.query TagSlot $ H.action (TI.SetChosen (map s.config.tags.parse head.tags))
 
             let fmt = either id id <<< formatDateTime "MMM DD, YYYY"
             H.modify (message ("First bookmarked " <> fmt head.time))
-            H.modify (state (_ { title   = head.description
-                               , desc    = head.extended
-                               , tags    = head.tags
-                               , toRead  = head.toRead
-                               , private = not head.shared
-                               , time    = Just head.time }))
+            H.modify (state (_ { title     = head.description
+                               , desc      = head.extended
+                               , tags      = head.tags
+                               , readLater = head.toread
+                               , private   = not head.shared
+                               , time      = Just head.time }))
 
       ApiPostAdd res k -> k <$ unwrapResponse res \_ -> do
         now <- extract <$> H.liftEff nowDateTime
@@ -221,15 +230,18 @@ component cfg =
       ApiPostDelete res k -> k <$ unwrapResponse res \_ -> do
         H.modify (success "Deleted" <<< state (_ { time = Nothing }))
 
-      OnUrl x k ->     k <$ H.modify (state (_ { url = x }))
-      OnDesc x k ->    k <$ H.modify (state (_ { desc = x }))
-      OnTitle x k ->   k <$ H.modify (state (_ { title = x }))
-      OnToRead x k ->  k <$ H.modify (state (_ { toRead = x }))
-      OnPrivate x k -> k <$ H.modify (state (_ { private = x }))
+      OnUrl x k ->       k <$ H.modify (state (_ { url = x }))
+      OnDesc x k ->      k <$ H.modify (state (_ { desc = x }))
+      OnTitle x k ->     k <$ H.modify (state (_ { title = x }))
+      OnPrivate x k ->   k <$ H.modify (state (_ { private = x }))
+      OnReadLater x k -> k <$ H.modify (state (_ { readLater = x }))
 
-      FromTagInput o k -> k <$
+      FromTagInput o k -> k <$ do
+        State s <- H.get
+
         case o of
-          TI.OnChosen xs -> H.modify (state (_ { tags = map cfg.tags.textValue xs }))
+          TI.OnChosen xs ->
+            H.modify (state (_ { tags = map s.config.tags.textValue xs }))
 
 
 unwrapResponse :: forall i m a. Either Error a -> (a -> DSL i m Unit) -> DSL i m Unit
@@ -248,17 +260,17 @@ noBubble
 noBubble = H.liftEff <<< E.preventDefault <<< ET.mouseEventToEvent
 
 
-state :: forall a. Newtype State a => (a -> a) -> (State -> State)
+state :: forall a i m. Newtype (State i m) a => (a -> a) -> (State i m -> State i m)
 state f = wrap <<< f <<< unwrap
 
 
-message :: String -> (State -> State)
+message :: forall i m. String -> (State i m -> State i m)
 message s = state (_ { status = Normal s })
 
 
-error :: String -> (State -> State)
+error :: forall i m. String -> (State i m -> State i m)
 error s = state (_ { status = Error s })
 
 
-success :: String -> (State -> State)
+success :: forall i m. String -> (State i m -> State i m)
 success s = state (_ { status = Success s })

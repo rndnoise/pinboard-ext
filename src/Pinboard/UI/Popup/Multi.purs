@@ -4,8 +4,9 @@ import Prelude
 import Data.Array                 (all, mapWithIndex, modifyAt)
 import Data.Either                (Either(..))
 import Data.Maybe                 (Maybe(..), fromMaybe)
-import Data.Newtype               (class Newtype, over, unwrap)
+import Data.Newtype               (class Newtype, over)
 import Data.Filterable            (filterMap)
+import Data.Tuple                 (Tuple(..))
 import Data.TraversableWithIndex  (forWithIndex)
 import Control.Monad.Aff.Class    (class MonadAff)
 import Control.Monad.Jax.Class    (class MonadJax)
@@ -23,19 +24,20 @@ import Halogen.HTML.Properties    as HP
 
 import Chrome.Tabs.Tab                as CT
 import Pinboard.API                   (Error(..), postsAdd, addOptions)
+import Pinboard.Config                (Config)
 import Pinboard.UI.Internal.HTML      (class_)
 import Pinboard.UI.Component.TagInput as TI
-import Pinboard.Config                as CF
 
 -------------------------------------------------------------------------------
 
-newtype State = State
-  { tabs    :: Array Tab
-  , tags    :: Array String
-  , toRead  :: Boolean
-  , private :: Boolean
-  , replace :: Boolean
-  , chosen  :: Array Boolean }
+newtype State i m = State
+  { tabs      :: Array Tab
+  , tags      :: Array String
+  , readLater :: Boolean
+  , private   :: Boolean
+  , replace   :: Boolean
+  , chosen    :: Array Boolean
+  , config    :: Config i m }
 
 type Tab =
   { url     :: String
@@ -44,7 +46,7 @@ type Tab =
   , chosen  :: Boolean
   , status  :: Status }
 
-derive instance newtypeState :: Newtype State _
+derive instance newtypeState :: Newtype (State i m) _
 
 data Status
   = Idle
@@ -54,25 +56,26 @@ data Status
 
 derive instance eqStatus :: Eq Status
 
-data Query i k
+data Query i m k
   = Save ET.MouseEvent k
+  | Recv (Input i m) k
   | OnTitle Int String k
   | OnCheck Int Boolean k
-  | OnToRead Boolean k
+  | OnReadLater Boolean k
   | OnPrivate Boolean k
   | OnReplace Boolean k
   | ApiPostAdd Int (Either Error Unit) k
   | FromTagWidget (TI.Output i) k
 
-type Input = Array CT.Tab
-type Output = Void
+type Input i m = Tuple (Config i m) (Array CT.Tab)
+type Output    = Void
 
 data Slot = TagSlot
 derive instance eqSlot  :: Eq Slot
 derive instance ordSlot :: Ord Slot
 
-type HTML i m = H.ParentHTML (Query i) (TI.Query i) Slot m
-type DSL i m  = H.ParentDSL State (Query i) (TI.Query i) Slot Output m
+type HTML i m = H.ParentHTML (Query i m) (TI.Query i) Slot m
+type DSL i m  = H.ParentDSL (State i m) (Query i m) (TI.Query i) Slot Output m
 
 -------------------------------------------------------------------------------
 
@@ -81,23 +84,23 @@ component
    . MonadAff (HA.HalogenEffects (ajax :: AJAX | e)) m
   => MonadJax m
   => Eq i
-  => CF.Config i m
-  -> H.Component HH.HTML (Query i) Input Output m
-component cfg =
+  => H.Component HH.HTML (Query i m) (Input i m) Output m
+component =
   H.parentComponent
   { initialState
   , render
   , eval
-  , receiver: const Nothing }
+  , receiver: Just <<< flip Recv unit }
   where
-    initialState :: Input -> State
-    initialState ts = State
-      { tabs:     filterMap op ts
-      , tags:     []
-      , toRead:   false
-      , private:  true
-      , replace:  true
-      , chosen:   true <$ ts }
+    initialState :: Input i m -> State i m
+    initialState (Tuple config tabs) = State
+      { tabs:       filterMap op tabs
+      , tags:       []
+      , readLater:  config.defaults.readLater
+      , private:    config.defaults.private
+      , replace:    config.defaults.replace
+      , chosen:     true <$ tabs
+      , config }
       where
         op t = { url: _, title: _, favIcon: _, chosen: _, status: Idle }
                <$> CT.url t
@@ -105,33 +108,33 @@ component cfg =
                <*> pure (CT.favIconUrl t)
                <*> pure true
 
-    render :: State -> HTML i m
+    render :: State i m -> HTML i m
     render (State s) =
       HH.form [HP.id_ "multi", class_ "multi"]
       [ HH.div [class_ "status light"] [ HH.text "TODO" ]
       , HH.div [class_ "upper"]
         [ HH.label [class_ "select"]
           [ HH.text "Tags:"
-          , HH.slot TagSlot (TI.component cfg.tags) unit (HE.input FromTagWidget) ]
+          , HH.slot TagSlot (TI.component s.config.tags) unit (HE.input FromTagWidget) ]
 
         , HH.label [class_ "checkbox"]
           [ HH.input
             [ HP.type_ HP.InputCheckbox
-            , HP.checked true
-            , HE.onChecked (HE.input OnToRead) ]
+            , HP.checked s.readLater
+            , HE.onChecked (HE.input OnReadLater) ]
           , HH.text "Read later" ]
 
         , HH.label [class_ "checkbox"]
           [ HH.input
             [ HP.type_ HP.InputCheckbox
-            , HP.checked true
+            , HP.checked s.private
             , HE.onChecked (HE.input OnPrivate) ]
           , HH.text "Private" ]
 
         , HH.label [class_ "checkbox"]
           [ HH.input
             [ HP.type_ HP.InputCheckbox
-            , HP.checked true
+            , HP.checked s.replace
             , HE.onChecked (HE.input OnReplace) ]
           , HH.text "Replace" ]
 
@@ -167,11 +170,14 @@ component cfg =
                      _       -> HH.div [class_ "title"] [ HH.text t.title ]
               , HH.div [class_ "url"] [ HH.text t.url ] ] ] ]
 
-    eval :: Query i ~> DSL i m
+    eval :: Query i m ~> DSL i m
     eval q = case q of
+      Recv i k -> k <$ do
+        H.put (initialState i)
+
       Save e k -> k <$ do
         noBubble e
-        s <- H.gets unwrap
+        State s <- H.get
 
         forWithIndex s.tabs \n t ->
           when (t.chosen && t.status == Idle) $ unit <$ H.fork do
@@ -181,7 +187,7 @@ component cfg =
                     { tags    = Just s.tags
                     , replace = Just s.replace
                     , shared  = Just (not s.private)
-                    , toRead  = Just s.toRead })) cfg.authToken
+                    , toread  = Just s.readLater })) s.config.authToken
 
             eval (ApiPostAdd n res k)
 
@@ -191,8 +197,8 @@ component cfg =
       OnCheck n value k -> k <$ do
         H.modify (updateTab n (_ { chosen = value }))
 
-      OnToRead value k -> k <$ do
-        H.modify (over State (_ { toRead = value }))
+      OnReadLater value k -> k <$ do
+        H.modify (over State (_ { readLater = value }))
 
       OnPrivate value k -> k <$ do
         H.modify (over State (_ { private = value }))
@@ -211,10 +217,11 @@ component cfg =
       FromTagWidget o k -> k <$
         case o of
           TI.OnChosen xs -> do
-            H.modify (over State (_ { tags = map cfg.tags.textValue xs }))
+            State s <- H.get
+            H.modify (over State (_ { tags = map s.config.tags.textValue xs }))
 
 
-updateTab :: Int -> (Tab -> Tab) -> State -> State
+updateTab :: forall i m. Int -> (Tab -> Tab) -> State i m -> State i m
 updateTab n f (State s) = case modifyAt n f s.tabs of
   Nothing -> State s
   Just ts -> State (s { tabs = ts })

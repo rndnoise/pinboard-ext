@@ -1,19 +1,15 @@
 module Pinboard.UI.Options where
 
 import Prelude
-import DOM                        (DOM)
-import DOM.Event.Types            as ET
 import Control.Monad.Aff.Class    (class MonadAff)
 import Control.Monad.Jax.Class    (class MonadJax)
-import Control.Monad.Reader.Class (class MonadAsk)
 import Control.Monad.Reader.Trans (runReaderT)
-import Control.Monad.Trans.Class  (lift)
 import Control.Monad.Eff          (Eff)
 import Data.Either                (Either)
+import Data.Identity              (Identity)
 import Data.Maybe                 (Maybe(..))
-import Data.Newtype               (class Newtype, over)
-import Data.StrMap                (fromFoldable)
-import Data.Tuple                 (Tuple(..))
+import Data.Newtype               (class Newtype, unwrap)
+import Data.Tuple                 (Tuple)
 import Halogen                    as H
 import Halogen.Aff                as HA
 import Halogen.HTML               as HH
@@ -22,37 +18,38 @@ import Halogen.HTML.Properties    as HP
 import Halogen.VDom.Driver        as HV
 import Network.HTTP.Affjax        (AJAX)
 
-import Pinboard.UI.Internal.HTML  (class_)
-import Pinboard.API               (AuthToken, Error, Tag)
 import Chrome.FFI                 (CHROME)
-import Chrome.Storage.Local       as LS
+import Pinboard.API               (Error)
+import Pinboard.Config            (Config, Defaults, Tag, loadConfig, saveConfig)
+import Pinboard.UI.Internal.HTML  (class_)
 
 -- | This is executed when the config page is shown
 main :: Eff (HA.HalogenEffects (ajax :: AJAX, chrome :: CHROME)) Unit
 main = HA.runHalogenAff do
   body <- HA.awaitBody
-  --   <- HV.runUI (H.hoist (flip runReaderT "") component) unit body
+  conf <- loadConfig
+  _    <- HV.runUI component conf body
   pure unit
 
 data Query k
-  = Init k
-  | Exit k
-  | Save ET.MouseEvent k
-  | OnToRead Boolean k
+  = OnToRead Boolean k
   | OnPrivate Boolean k
   | OnReplace Boolean k
   | OnAuthToken String k
   | ApiTagsGet (Either Error (Array (Tuple Tag Number))) k
 
 newtype State = State
-  { toRead    :: Boolean
-  , private   :: Boolean
-  , replace   :: Boolean
-  , authToken :: String }
+  { config :: Config Tag Identity
+  , status :: Status }
 
-derive instance stateNewtype :: Newtype State _
+derive instance newtypeState :: Newtype State _
 
-type Input  = Unit
+data Status
+  = Info String
+  | Error String
+  | Success String
+
+type Input  = Config Tag Identity
 type Output = Unit
 
 type HTML  = H.ComponentHTML Query
@@ -62,85 +59,75 @@ component
   :: forall eff m
    . MonadAff (HA.HalogenEffects (ajax :: AJAX, chrome :: CHROME | eff)) m
   => MonadJax m
-  => MonadAsk AuthToken m
   => H.Component HH.HTML Query Input Output m
 component =
-  H.lifecycleComponent
+  H.component
   { initialState
   , render
   , eval
-  , receiver:    const Nothing
-  , finalizer:   Just (H.action Exit)
-  , initializer: Just (H.action Init) }
+  , receiver: const Nothing }
   where
     initialState :: Input -> State
-    initialState _ =
-      State
-      { toRead:     false
-      , private:    false
-      , replace:    false
-      , authToken:  "" }
+    initialState config = State { config, status: Info "message" }
 
     render :: State -> HTML
-    render (State s) = HH.form_
+    render (State { config, status }) = HH.form_
       [ HH.label [class_ "text"]
-        [ HH.text "API Token"
+        [ HH.text "API token -- see "
+        , HH.a [HP.href "https://pinboard.in/settings/password"] [HH.text "pinboard.in/settings"]
+        , HH.text " to view yours:"
         , HH.input
           [ HP.type_ HP.InputText
-          , HP.value s.authToken
-          , HE.onValueInput (HE.input OnAuthToken) ] ]
+          , HP.value config.authToken
+          , HE.onValueInput (HE.input OnAuthToken) ]
+        , case status of
+            Info msg    -> HH.span [class_ ""] [ HH.text msg ]
+            Error msg   -> HH.span [class_ ""] [ HH.text msg ]
+            Success msg -> HH.span [class_ ""] [ HH.text msg ]]
 
       , HH.label [class_ "checkbox"]
         [ HH.input
           [ HP.type_ HP.InputCheckbox
-          , HP.checked s.toRead
+          , HP.checked config.defaults.readLater
           , HE.onChecked (HE.input OnToRead) ]
-        , HH.text "Check 'to read' by default" ]
+        , HH.text "Mark " , HH.b_ [ HH.text "read later" ] , HH.text " by default" ]
 
       , HH.label [class_ "checkbox"]
         [ HH.input
           [ HP.type_ HP.InputCheckbox
-          , HP.checked s.private
+          , HP.checked config.defaults.private
           , HE.onChecked (HE.input OnPrivate) ]
-        , HH.text "Check 'private' by default" ]
+        , HH.text "Make bookmarks " , HH.b_ [ HH.text "private" ] , HH.text " by default" ]
 
       , HH.label [class_ "checkbox"]
         [ HH.input
           [ HP.type_ HP.InputCheckbox
-          , HP.checked s.replace
+          , HP.checked config.defaults.replace
           , HE.onChecked (HE.input OnReplace) ]
-        , HH.text "Check 'replace' by default" ]
-
-      , HH.button [class_ "primary", HE.onClick (HE.input Save)]
-        [ HH.text "Save" ]
-      ]
+        , HH.b_ [ HH.text "Replace" ] , HH.text " existing bookmarks by default" ]]
 
     eval :: Query ~> DSL m
     eval q = case q of
-      Init k -> pure k
-
-      Exit k -> pure k
-
-      Save e k -> k <$ do
-        State s <- H.get
-        pure unit {-
-        lift $ LS.set (fromFoldable
-                       [ Tuple "toRead"    (LS.toStorable s.toRead)
-                       , Tuple "private"   (LS.toStorable s.private)
-                       , Tuple "replace"   (LS.toStorable s.replace)
-                       , Tuple "authToken" (LS.toStorable s.authToken) ])-}
-
       OnToRead value k -> k <$ do
-        H.modify (over State (_ { toRead = value }))
+        H.modify (defaults (_ { readLater = value }))
+        H.liftAff <<< saveConfig =<< H.gets (_.config <<< unwrap)
 
       OnPrivate value k -> k <$ do
-        H.modify (over State (_ { private = value }))
+        H.modify (defaults (_ { private = value }))
+        H.liftAff <<< saveConfig =<< H.gets (_.config <<< unwrap)
 
       OnReplace value k -> k <$ do
-        H.modify (over State (_ { replace = value }))
+        H.modify (defaults (_ { replace = value }))
+        H.liftAff <<< saveConfig =<< H.gets (_.config <<< unwrap)
 
       OnAuthToken value k -> k <$ do
-        H.modify (over State (_ { authToken = value }))
+        H.modify (config (_ { authToken = value }))
+        H.liftAff <<< saveConfig =<< H.gets (_.config <<< unwrap)
 
       ApiTagsGet res k -> pure k
 
+config :: (Config Tag Identity -> Config Tag Identity) -> State -> State
+config f (State s) = State s { config = f (s.config) }
+
+defaults :: (Defaults -> Defaults) -> State -> State
+defaults f = config (\c -> c { defaults = f (c.defaults) })

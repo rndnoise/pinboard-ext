@@ -22,7 +22,7 @@ decodePosts name x = traverse decodePost =<< decodeArray name x
   where
     decodePost z = do
       o <- decodeObject name z
-      { href: _, description: _, extended: _, hash: _, meta: _, others: _, tags: _, time: _, toRead: _, shared: _ } <$>
+      { href: _, description: _, extended: _, hash: _, meta: _, others: _, tags: _, time: _, toread: _, shared: _ } <$>
         decodePropWith  decodeString "href" o         <*>
         decodePropWith  decodeString "description" o  <*>
         decodePropWith  decodeString "extended" o     <*>

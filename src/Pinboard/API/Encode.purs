@@ -53,7 +53,7 @@ instance encodeAddOptions :: ToQuery AddOptions' where
     ,Tuple "dt"       <<< fromDateTime <$> x.dt
     ,Tuple "replace"  <<< fromBool     <$> x.replace
     ,Tuple "shared"   <<< fromBool     <$> x.shared
-    ,Tuple "toread"   <<< fromBool     <$> x.toRead] <>
+    ,Tuple "toread"   <<< fromBool     <$> x.toread] <>
     (Tuple "tags" <$> fromMaybe [] x.tags))
 
 instance encodeGetOptions :: ToQuery GetOptions' where

@@ -41,7 +41,7 @@ type Post =
   , others      :: Maybe Number
   , tags        :: Array Tag
   , time        :: DateTime
-  , toRead      :: Boolean
+  , toread      :: Boolean
   , shared      :: Boolean }
 
 type Note =
@@ -59,7 +59,7 @@ type AddOptions =
   , dt          :: Maybe DateTime
   , replace     :: Maybe Boolean
   , shared      :: Maybe Boolean
-  , toRead      :: Maybe Boolean }
+  , toread      :: Maybe Boolean }
 
 addOptions :: AddOptions
 addOptions =
@@ -68,7 +68,7 @@ addOptions =
   , dt:       Nothing
   , replace:  Nothing
   , shared:   Nothing
-  , toRead:   Nothing }
+  , toread:   Nothing }
 
 type GetOptions =
   { tag   :: Maybe (Array Tag)

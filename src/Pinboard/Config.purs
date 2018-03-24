@@ -1,5 +1,6 @@
 module Pinboard.Config
   ( Config
+  , Defaults
   , Tag
   , loadConfig
   , saveConfig
@@ -32,9 +33,12 @@ type Tag
 type Config i m =
   { tags      :: TI.Config i m
   , authToken :: String
-  , defaults  :: { readLater  :: Maybe Boolean
-                 , replace    :: Maybe Boolean
-                 , private    :: Maybe Boolean } }
+  , defaults  :: Defaults }
+
+type Defaults =
+  { readLater  :: Boolean
+  , replace    :: Boolean
+  , private    :: Boolean }
 
 
 loadConfig :: forall m eff. Applicative m => Aff (chrome :: CHROME | eff) (Config Tag m)
@@ -46,12 +50,13 @@ loadConfig =
       { tags:       tagConfig []
       , authToken:  fromMaybe "" (try readString =<< lookup authToken o)
       , defaults:
-        { readLater: try readBoolean =<< lookup readLater o
-        , replace:   try readBoolean =<< lookup replace o
-        , private:   try readBoolean =<< lookup private o }}
+        { readLater: fromMaybe false (try readBoolean =<< lookup readLater o)
+        , replace:   fromMaybe false (try readBoolean =<< lookup replace o)
+        , private:   fromMaybe true  (try readBoolean =<< lookup private o) }}
 
     try :: forall a. (Foreign -> F a) -> Foreign -> Maybe a
     try f = hush <<< runExcept <<< f
+
 
 saveConfig
   :: forall eff i m

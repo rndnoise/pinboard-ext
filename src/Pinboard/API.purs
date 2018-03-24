@@ -19,6 +19,7 @@ module Pinboard.API
   ) where
 
 import Prelude
+import Global                     (readFloat)
 import Control.Monad.Jax.Class    (class MonadJax, affjax)
 import Control.Monad.Reader.Class (class MonadAsk, ask)
 import Data.Argonaut.Core         (Json, fromString)
@@ -232,7 +233,7 @@ tagsGet = decode <$> (affjax =<< makeReq_ "tags/get")
       j <- jsonParser r.response
       o <- decodeObject root j
       traverse op (toArrayWithKey Tuple o)
-    op (Tuple k v) = Tuple k <$> decodeNumber root v
+    op (Tuple k v) = Tuple k <$> map readFloat (decodeString root v)
 
 
 -- | Delete an existing tag.

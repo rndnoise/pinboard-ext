@@ -3,13 +3,13 @@ module Pinboard.UI.Options where
 import Prelude
 import Control.Monad.Aff.Class    (class MonadAff)
 import Control.Monad.Jax.Class    (class MonadJax)
-import Control.Monad.Reader.Trans (runReaderT)
 import Control.Monad.Eff          (Eff)
-import Data.Either                (Either)
+import Control.Monad.Reader.Trans (runReaderT)
+import Data.Either                (Either(..))
 import Data.Identity              (Identity)
 import Data.Maybe                 (Maybe(..))
 import Data.Newtype               (class Newtype, unwrap)
-import Data.Tuple                 (Tuple)
+import Data.Tuple                 (fst)
 import Halogen                    as H
 import Halogen.Aff                as HA
 import Halogen.HTML               as HH
@@ -19,8 +19,8 @@ import Halogen.VDom.Driver        as HV
 import Network.HTTP.Affjax        (AJAX)
 
 import Chrome.FFI                 (CHROME)
-import Pinboard.API               (Error)
-import Pinboard.Config            (Config, Defaults, Tag, loadConfig, saveConfig)
+import Pinboard.API               (Error(..), tagsGet)
+import Pinboard.Config            (Config, Defaults, Tag, loadConfig, saveConfig, saveTags)
 import Pinboard.UI.Internal.HTML  (class_)
 
 -- | This is executed when the config page is shown
@@ -36,11 +36,10 @@ data Query k
   | OnPrivate Boolean k
   | OnReplace Boolean k
   | OnAuthToken String k
-  | ApiTagsGet (Either Error (Array (Tuple Tag Number))) k
 
 newtype State = State
   { config :: Config Tag Identity
-  , status :: Status }
+  , status :: Maybe Status }
 
 derive instance newtypeState :: Newtype State _
 
@@ -68,7 +67,7 @@ component =
   , receiver: const Nothing }
   where
     initialState :: Input -> State
-    initialState config = State { config, status: Info "message" }
+    initialState config = State { config, status: Nothing }
 
     render :: State -> HTML
     render (State { config, status }) = HH.form_
@@ -81,9 +80,10 @@ component =
           , HP.value config.authToken
           , HE.onValueInput (HE.input OnAuthToken) ]
         , case status of
-            Info msg    -> HH.span [class_ ""] [ HH.text msg ]
-            Error msg   -> HH.span [class_ ""] [ HH.text msg ]
-            Success msg -> HH.span [class_ ""] [ HH.text msg ]]
+            Nothing            -> HH.text ""
+            Just (Info msg)    -> HH.div [class_ "light"] [ HH.text msg ]
+            Just (Error msg)   -> HH.div [class_ "danger"] [ HH.text msg ]
+            Just (Success msg) -> HH.div [class_ "success"] [ HH.text msg ]]
 
       , HH.label [class_ "checkbox"]
         [ HH.input
@@ -121,10 +121,25 @@ component =
         H.liftAff <<< saveConfig =<< H.gets (_.config <<< unwrap)
 
       OnAuthToken value k -> k <$ do
-        H.modify (config (_ { authToken = value }))
-        H.liftAff <<< saveConfig =<< H.gets (_.config <<< unwrap)
+        res <- H.lift (runReaderT tagsGet value)
+        case res of
+          -- TODO: distinguish ServerError / DecodeError
+          Left (ServerError msg) ->
+            H.modify (status (Error msg))
 
-      ApiTagsGet res k -> pure k
+          Left (DecodeError msg) ->
+            H.modify (status (Error msg))
+
+          Right ts -> do
+            H.modify (config (_ { authToken = value }) <<<
+                      status (Success "Successfully authenticated"))
+            H.liftAff (saveTags (map fst ts))
+
+            State s <- H.get
+            H.liftAff (saveConfig s.config)
+
+status :: Status -> State -> State
+status m (State s) = State s { status = Just m }
 
 config :: (Config Tag Identity -> Config Tag Identity) -> State -> State
 config f (State s) = State s { config = f (s.config) }

@@ -4,6 +4,7 @@ module Pinboard.Config
   , Tag
   , loadConfig
   , saveConfig
+  , saveTags
   ) where
 
 import Prelude
@@ -11,13 +12,14 @@ import Control.Monad.Aff              (Aff)
 import Control.Monad.Except           (runExcept)
 import Data.Array                     (elem, filter)
 import Data.Either                    (hush)
-import Data.Foreign                   (Foreign, F, readBoolean, readString)
+import Data.Foreign                   (Foreign, F, readArray, readBoolean, readString)
 import Data.List                      (List(..), toUnfoldable)
 import Data.Maybe                     (Maybe, fromMaybe)
 import Data.Sequence                  (head)
 import Data.StrMap                    (StrMap, lookup, fromFoldable)
 import Data.Tuple                     (Tuple(..), fst, snd)
 import Data.Time.Duration             (Milliseconds(..))
+import Data.Traversable               (traverse)
 import Halogen.HTML                   as HH
 
 import Chrome.FFI                     (CHROME)
@@ -27,8 +29,10 @@ import Pinboard.UI.Internal.HTML      (class_)
 import Pinboard.UI.Popup.Complete     as CC
 import Pinboard.UI.Component.TagInput as TI
 
+
 type Tag
   = Tuple String CC.Result
+
 
 type Config i m =
   { tags      :: TI.Config i m
@@ -43,11 +47,11 @@ type Defaults =
 
 loadConfig :: forall m eff. Applicative m => Aff (chrome :: CHROME | eff) (Config Tag m)
 loadConfig =
-  decode <$> LS.getMulti [authToken, readLater, replace, private]
+  decode <$> LS.getMulti [authToken, readLater, replace, private, tags]
   where
     decode :: StrMap Foreign -> Config Tag m
     decode o =
-      { tags:       tagConfig []
+      { tags:       tagConfig (fromMaybe [] (try readTags =<< lookup tags o))
       , authToken:  fromMaybe "" (try readString =<< lookup authToken o)
       , defaults:
         { readLater: fromMaybe false (try readBoolean =<< lookup readLater o)
@@ -56,6 +60,9 @@ loadConfig =
 
     try :: forall a. (Foreign -> F a) -> Foreign -> Maybe a
     try f = hush <<< runExcept <<< f
+
+    readTags :: Foreign -> F (Array String)
+    readTags = traverse readString <=< readArray
 
 
 saveConfig
@@ -68,6 +75,13 @@ saveConfig cfg =
            , Tuple readLater (toStorable cfg.defaults.readLater)
            , Tuple replace   (toStorable cfg.defaults.replace)
            , Tuple private   (toStorable cfg.defaults.private) ])
+
+
+saveTags
+  :: forall eff
+   . Array String
+  -> Aff (chrome :: CHROME | eff) Unit
+saveTags xs = LS.set (fromFoldable [Tuple tags (toStorable xs)])
 
 
 tagConfig
@@ -117,3 +131,6 @@ replace = "pinboard.defaults.replace"
 
 private :: String
 private = "pinboard.defaults.private"
+
+tags :: String
+tags = "pinboard.tags"

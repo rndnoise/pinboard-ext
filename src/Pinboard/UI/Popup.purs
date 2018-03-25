@@ -1,75 +1,89 @@
-module Pinboard.UI.Popup where
+module Pinboard.UI.Popup
+  ( main
+  ) where
 
 import Prelude
-import Data.Array                     (find)
-import Data.Either                    (Either(..))
-import Data.Maybe                     (Maybe(..))
-import Data.Newtype                   (class Newtype, over)
-import Data.Tuple                     (Tuple(..))
+import Chrome.FFI                     (CHROME)
+import Chrome.Tabs                    (Tab, query, queryOptions) as CT
+import Chrome.Tabs.Tab                (active) as CT
 import Control.Monad.Aff.Class        (class MonadAff)
-import Control.Monad.Jax.Class        (class MonadJax)
 import Control.Monad.Eff              (Eff)
 import Control.Monad.Eff.Now          (NOW)
-import Network.HTTP.Affjax            (AJAX)
+import Control.Monad.Jax.Class        (class MonadJax)
+import Data.Array                     (find)
+import Data.Either                    (Either(..))
+import Data.Either.Nested             (Either3)
+import Data.Functor.Coproduct.Nested  (Coproduct3)
+import Data.Maybe                     (Maybe(..))
+import Data.Tuple                     (Tuple(..))
 import Halogen                        as H
 import Halogen.Aff                    as HA
+import Halogen.Component.ChildPath    (cp1, cp2, cp3)
 import Halogen.HTML                   as HH
 import Halogen.HTML.Events            as HE
 import Halogen.HTML.Properties        as HP
 import Halogen.VDom.Driver            as HV
-
-import Halogen.Component.ChildPath    as CP
-import Data.Either.Nested             (Either2)
-import Data.Functor.Coproduct.Nested  (Coproduct2)
-
-import Chrome.FFI                     (CHROME)
-import Chrome.Tabs                    (Tab, query, queryOptions) as CT
-import Chrome.Tabs.Tab                (active) as CT
-
+import Network.HTTP.Affjax            (AJAX)
 import Pinboard.Config                (Config, loadConfig)
-import Pinboard.UI.Internal.HTML      (classes)
+import Pinboard.UI.Internal.HTML      as PH
 import Pinboard.UI.Popup.Multi        as PM
+import Pinboard.UI.Popup.Options      as PO
 import Pinboard.UI.Popup.Single       as PS
 
 -------------------------------------------------------------------------------
 
 main :: Eff (HA.HalogenEffects (ajax :: AJAX, chrome :: CHROME, now :: NOW)) Unit
 main = HA.runHalogenAff do
-  body <- HA.awaitBody
-  tabs <- CT.query (CT.queryOptions { currentWindow = Just true })
   conf <- loadConfig
+  tabs <- CT.query (CT.queryOptions { currentWindow = Just true })
+  body <- HA.awaitBody
   _    <- HV.runUI component (Tuple conf tabs) body
+
   pure unit
 
 -------------------------------------------------------------------------------
 
-data Query k
+data Query m k
   = OnClickMulti k
   | OnClickSingle k
+  | OnClickOptions k
+  | FromOptions (PO.Output m) k
 
-newtype State i m = State
+type State m =
   { oneTab  :: Maybe CT.Tab
+    -- ^ The active browser tab when Pinboard icon was opened
+
   , allTabs :: Array CT.Tab
+    -- ^ All browser tabs in the window when Pinboard icon was clicked
+
   , active  :: Slot
-  , config  :: Config i m }
+    -- ^ Which of options/single/multi is displayed
 
-derive instance stateNewtype :: Newtype (State i m) _
+  , config  :: Config m }
 
-type Input i m  = Tuple (Config i m) (Array CT.Tab)
-type Output     = Void
+type Input m = Tuple (Config m) (Array CT.Tab)
+type Output  = Void
 
-type Slot       = Either2    Unit         Unit
-type Query' i m = Coproduct2 (PM.Query i m) (PS.Query i m)
+type Slot =
+  Either3
+    Unit
+    Unit
+    Unit
 
-type HTML i m = H.ParentHTML Query (Query' i m) Slot m
-type DSL i m  = H.ParentDSL (State i m) Query (Query' i m) Slot Output m
+type Query' m =
+  Coproduct3
+    (PM.Query m)
+    (PS.Query m)
+    PO.Query
+
+type HTML m = H.ParentHTML (Query m) (Query' m) Slot m
+type DSL m  = H.ParentDSL (State m) (Query m) (Query' m) Slot Output m
 
 component
-  :: forall eff i m
-   . MonadAff (HA.HalogenEffects (ajax :: AJAX, now :: NOW | eff)) m
+  :: forall eff m
+   . MonadAff (HA.HalogenEffects (ajax :: AJAX, chrome :: CHROME, now :: NOW | eff)) m
   => MonadJax m
-  => Eq i
-  => H.Component HH.HTML Query (Input i m) Output m
+  => H.Component HH.HTML (Query m) (Input m) Output m
 component =
   H.parentComponent
   { initialState
@@ -77,38 +91,58 @@ component =
   , eval
   , receiver: const Nothing }
   where
-    initialState :: Input i m -> State i m
+    initialState :: Input m -> State m
     initialState (Tuple config allTabs) =
-      State
-      { active: single
+      { active: if show config.authToken == ""
+                  then optionsSlot
+                  else singleSlot
       , oneTab: find CT.active allTabs
       , allTabs
       , config }
 
-    render :: State i m -> HTML i m
-    render (State s) =
+    render :: State m -> HTML m
+    render s =
       HH.div_
       [ HH.img
-          [ HP.src "img/plus-3.svg"
-          , classes [ toggle multi, "multi-icon" ]
-          , HE.onClick (HE.input_ OnClickMulti) ]
+          [ HP.src "img/single.svg"
+          , PH.classes [ toggle singleSlot, "single-icon" ]
+          , HE.onClick (HE.input_ OnClickSingle)
+          ]
+
       , HH.img
-          [ HP.src "img/plus.svg"
-          , classes [ toggle single, "single-icon" ]
-          , HE.onClick (HE.input_ OnClickSingle) ]
+          [ HP.src "img/multi.svg"
+          , PH.classes [ toggle multiSlot, "multi-icon" ]
+          , HE.onClick (HE.input_ OnClickMulti)
+          ]
+
+      , HH.img
+          [ HP.src "img/options.svg"
+          , PH.classes [ toggle optionsSlot, "options-icon" ]
+          , HE.onClick (HE.input_ OnClickOptions)
+          ]
+
       , HH.div
-          [ classes [ toggle multi, "multi" ] ]
-          [ HH.slot' CP.cp1 unit PM.component (Tuple s.config s.allTabs) absurd ]
+          [ PH.classes [ toggle singleSlot, "single" ] ]
+          [ HH.slot' cp2 unit PS.component (Tuple s.config s.oneTab) absurd ]
+
       , HH.div
-          [ classes [ toggle single, "single" ] ]
-          [ HH.slot' CP.cp2 unit PS.component (Tuple s.config s.oneTab) absurd ] ]
+          [ PH.classes [ toggle multiSlot, "multi" ] ]
+          [ HH.slot' cp1 unit PM.component (Tuple s.config s.allTabs) absurd ]
+
+      , HH.div
+          [ PH.classes [ toggle optionsSlot, "options" ] ]
+          [ HH.slot' cp3 unit PO.component s.config (HE.input FromOptions) ] ]
+
       where
         toggle x = if s.active == x then "active" else "dormant"
 
-    eval :: Query ~> DSL i m
+    eval :: Query m ~> DSL m
     eval q = case q of
-      OnClickMulti k  -> k <$ H.modify (over State (_ { active = multi  }))
-      OnClickSingle k -> k <$ H.modify (over State (_ { active = single }))
+      OnClickMulti k -> k <$ H.modify (_{ active = multiSlot  })
+      OnClickSingle k -> k <$ H.modify (_{ active = singleSlot })
+      OnClickOptions k -> k <$ H.modify (_{ active = optionsSlot })
+      FromOptions config k -> k <$ H.modify (_{ config = config })
 
-    multi    = Left unit
-    single   = Right (Left unit)
+    multiSlot   = Left unit
+    singleSlot  = Right (Left unit)
+    optionsSlot = Right (Right (Left unit))

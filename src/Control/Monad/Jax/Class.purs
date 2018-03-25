@@ -20,20 +20,21 @@ module Control.Monad.Jax.Class
   ) where
 
 import Prelude
-import Data.Maybe                   (Maybe(..))
-import Data.Either                  (Either(..))
-import Data.HTTP.Method             (Method(..))
 import Control.Monad.Aff            (Aff)
 import Control.Monad.Eff.Ref        (REF)
-import Control.Monad.Trans.Class    (lift)
+{-
 import Control.Monad.Except.Trans   (ExceptT)
 import Control.Monad.List.Trans     (ListT)
 import Control.Monad.Maybe.Trans    (MaybeT)
 import Control.Monad.RWS.Trans      (RWST)
-import Control.Monad.Reader.Trans   (ReaderT, class MonadReader, runReaderT, ask)
 import Control.Monad.State.Trans    (StateT)
 import Control.Monad.Writer.Trans   (WriterT)
-
+-}
+import Control.Monad.Reader.Trans   (ReaderT, runReaderT, ask)
+import Control.Monad.Trans.Class    (lift)
+import Data.Either                  (Either(..))
+import Data.HTTP.Method             (Method(..))
+import Data.Maybe                   (Maybe(..))
 import Network.HTTP.Affjax          (AJAX, AffjaxRequest, AffjaxResponse, RetryPolicy, URL, defaultRequest)
 import Network.HTTP.Affjax          as X
 import Network.HTTP.Affjax.Request  (class Requestable)
@@ -60,21 +61,19 @@ instance affJax
   affjax r    = effFrom (X.affjax r)
   retry p f   = effFrom <<< X.retry p (effTo <<< f)
 
--- instance contJax :: MonadJax m => MonadJax (ContT r m) where
--- instance exceptJax :: MonadJax m => MonadJax (ExceptT e m) where
--- instance listJax :: MonadJax m => MonadJax (ListT m) where
--- instance maybeJax :: MonadJax m => MonadJax (MaybeT m) where
--- instance rwsJax :: MonadJax m => MonadJax (RWST r w s m) where
-
 instance readerJax :: MonadJax m => MonadJax (ReaderT r m) where
   affjax r  = lift (affjax r)
   retry p f = \r -> do
     env <- ask
     lift (retry p (flip runReaderT env <<< f) r)
 
+-- instance contJax :: MonadJax m => MonadJax (ContT r m) where
+-- instance exceptJax :: MonadJax m => MonadJax (ExceptT e m) where
+-- instance listJax :: MonadJax m => MonadJax (ListT m) where
+-- instance maybeJax :: MonadJax m => MonadJax (MaybeT m) where
+-- instance rwsJax :: MonadJax m => MonadJax (RWST r w s m) where
 -- instance stateJax :: MonadJax m => MonadJax (StateT s m) where
 -- instance writerJax :: MonadJax m => MonadJax (WriterT w m) where
-
 
 get
   :: forall m b

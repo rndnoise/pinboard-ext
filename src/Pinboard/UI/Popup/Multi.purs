@@ -1,43 +1,48 @@
-module Pinboard.UI.Popup.Multi where
+module Pinboard.UI.Popup.Multi
+  ( component
+  , Input
+  , Output
+  , Query
+  , State
+  , Status
+  , Tab
+  ) where
 
 import Prelude
-import Data.Array                 (all, mapWithIndex, modifyAt)
-import Data.Either                (Either(..))
-import Data.Maybe                 (Maybe(..), fromMaybe)
-import Data.Newtype               (class Newtype, over)
-import Data.Filterable            (filterMap)
-import Data.Tuple                 (Tuple(..))
-import Data.TraversableWithIndex  (forWithIndex)
-import Control.Monad.Aff.Class    (class MonadAff)
-import Control.Monad.Jax.Class    (class MonadJax)
-import Control.Monad.Reader.Trans (runReaderT)
-import Control.Monad.Trans.Class  (lift)
-import Network.HTTP.Affjax        (AJAX)
-import DOM                        (DOM)
-import DOM.Event.Event            as E
-import DOM.Event.Types            as ET
-import Halogen                    as H
-import Halogen.Aff                as HA
-import Halogen.HTML               as HH
-import Halogen.HTML.Events        as HE
-import Halogen.HTML.Properties    as HP
-
 import Chrome.Tabs.Tab                as CT
+import Control.Monad.Aff.Class        (class MonadAff)
+import Control.Monad.Jax.Class        (class MonadJax)
+import DOM                            (DOM)
+import DOM.Event.Event                (preventDefault)
+import DOM.Event.Types                (MouseEvent, mouseEventToEvent)
+import Data.Array                     (all, any, mapWithIndex, modifyAt)
+import Data.Either                    (Either(..))
+import Data.Filterable                (filterMap, maybeBool)
+import Data.Maybe                     (Maybe(..))
+import Data.String                    (Pattern(..), indexOf)
+import Data.TraversableWithIndex      (forWithIndex)
+import Data.Tuple                     (Tuple(..))
+import Halogen                        as H
+import Halogen.Aff                    as HA
+import Halogen.HTML                   as HH
+import Halogen.HTML.Events            as HE
+import Halogen.HTML.Properties        as HP
+import Network.HTTP.Affjax            (AJAX)
 import Pinboard.API                   (Error(..), postsAdd, addOptions)
-import Pinboard.Config                (Config)
-import Pinboard.UI.Internal.HTML      (class_)
+import Pinboard.Config                (Config, Tag)
 import Pinboard.UI.Component.TagInput as TI
+import Pinboard.UI.Internal.HTML      as PH
 
 -------------------------------------------------------------------------------
 
-newtype State i m = State
+type State m =
   { tabs      :: Array Tab
   , tags      :: Array String
   , readLater :: Boolean
   , private   :: Boolean
   , replace   :: Boolean
   , chosen    :: Array Boolean
-  , config    :: Config i m }
+  , config    :: Config m }
 
 type Tab =
   { url     :: String
@@ -45,8 +50,6 @@ type Tab =
   , favIcon :: Maybe String
   , chosen  :: Boolean
   , status  :: Status }
-
-derive instance newtypeState :: Newtype (State i m) _
 
 data Status
   = Idle
@@ -56,44 +59,42 @@ data Status
 
 derive instance eqStatus :: Eq Status
 
-data Query i m k
-  = Save ET.MouseEvent k
-  | Recv (Input i m) k
+data Query m k
+  = Save MouseEvent k
+  | Recv (Input m) k
   | OnTitle Int String k
   | OnCheck Int Boolean k
   | OnReadLater Boolean k
   | OnPrivate Boolean k
   | OnReplace Boolean k
-  | ApiPostAdd Int (Either Error Unit) k
-  | FromTagWidget (TI.Output i) k
+  | FromTagInput (TI.Output Tag) k
 
-type Input i m = Tuple (Config i m) (Array CT.Tab)
-type Output    = Void
+type Input m = Tuple (Config m) (Array CT.Tab)
+type Output  = Void
+
+type HTML m = H.ParentHTML (Query m) (TI.Query Tag m) Slot m
+type DSL m  = H.ParentDSL (State m) (Query m) (TI.Query Tag m) Slot Output m
 
 data Slot = TagSlot
 derive instance eqSlot  :: Eq Slot
 derive instance ordSlot :: Ord Slot
 
-type HTML i m = H.ParentHTML (Query i m) (TI.Query i) Slot m
-type DSL i m  = H.ParentDSL (State i m) (Query i m) (TI.Query i) Slot Output m
-
 -------------------------------------------------------------------------------
 
 component
-  :: forall i e m
+  :: forall e m
    . MonadAff (HA.HalogenEffects (ajax :: AJAX | e)) m
   => MonadJax m
-  => Eq i
-  => H.Component HH.HTML (Query i m) (Input i m) Output m
+  => H.Component HH.HTML (Query m) (Input m) Output m
 component =
   H.parentComponent
   { initialState
   , render
   , eval
-  , receiver: Just <<< flip Recv unit }
+  , receiver: \i -> Just (Recv i unit) }
   where
-    initialState :: Input i m -> State i m
-    initialState (Tuple config tabs) = State
+    initialState :: Input m -> State m
+    initialState (Tuple config tabs) =
       { tabs:       filterMap op tabs
       , tags:       []
       , readLater:  config.defaults.readLater
@@ -103,133 +104,186 @@ component =
       , config }
       where
         op t = { url: _, title: _, favIcon: _, chosen: _, status: Idle }
-               <$> CT.url t
+               <$> (maybeBool ok =<< CT.url t)
                <*> CT.title t
                <*> pure (CT.favIconUrl t)
                <*> pure true
 
-    render :: State i m -> HTML i m
-    render (State s) =
-      HH.form [HP.id_ "multi", class_ "multi"]
-      [ HH.div [class_ "status light"] [ HH.text "TODO" ]
-      , HH.div [class_ "upper"]
-        [ HH.label [class_ "select"]
-          [ HH.text "Tags:"
-          , HH.slot TagSlot (TI.component s.config.tags) unit (HE.input FromTagWidget) ]
+        -- Ignore tabs for chrome://, about:, etc
+        ok u = any (\s -> Pattern s `indexOf` u == Just 0)
+          [ "http:"
+          , "https:"
+          , "javascript:"
+          , "mailto:"
+          , "ftp:"
+          , "file:"
+          , "feed:" ]
 
-        , HH.label [class_ "checkbox"]
+    render :: State m -> HTML m
+    render s =
+      HH.form
+      [ HP.id_ "multi" ]
+      [ HH.div
+        [ PH.class_ "status light" ]
+        [ HH.text "Bookmark multiple tabs" ]
+
+      , HH.div
+        [ PH.class_ "upper" ]
+        [ HH.label
+          [ PH.class_ "select" ]
+          [ HH.text "Tags:"
+          , HH.slot TagSlot TI.component
+              (Tuple s.config.tags (map s.config.tags.parse s.tags))
+              (HE.input FromTagInput)
+          ]
+
+        , HH.label
+          [ PH.class_ "checkbox" ]
           [ HH.input
             [ HP.type_ HP.InputCheckbox
             , HP.checked s.readLater
-            , HE.onChecked (HE.input OnReadLater) ]
-          , HH.text "Read later" ]
+            , HE.onChecked (HE.input OnReadLater)
+            ]
+          , HH.text "Read later"
+          ]
 
-        , HH.label [class_ "checkbox"]
+        , HH.label
+          [ PH.class_ "checkbox" ]
           [ HH.input
             [ HP.type_ HP.InputCheckbox
             , HP.checked s.private
-            , HE.onChecked (HE.input OnPrivate) ]
-          , HH.text "Private" ]
+            , HE.onChecked (HE.input OnPrivate)
+            ]
+          , HH.text "Private"
+          ]
 
-        , HH.label [class_ "checkbox"]
+        , HH.label
+          [ PH.class_ "checkbox" ]
           [ HH.input
             [ HP.type_ HP.InputCheckbox
             , HP.checked s.replace
-            , HE.onChecked (HE.input OnReplace) ]
-          , HH.text "Replace" ]
+            , HE.onChecked (HE.input OnReplace)
+            ]
+          , HH.text "Replace"
+          ]
 
         , HH.button
-          [ class_ "primary"
+          [ PH.class_ "primary"
           , HP.disabled (all (\x -> not x.chosen || x.status /= Idle) s.tabs)
-          , HE.onClick (HE.input Save) ]
-          [ HH.text "Save" ] ]
+          , HE.onClick (HE.input Save)
+          ]
+          [ HH.text "Save" ]
+        ]
 
-      , HH.ul [class_ "tabs"] $ flip mapWithIndex s.tabs \n t ->
-          HH.li [class_ case t.status of
-                             Idle -> "idle"
-                             _    -> ""]
-            [ HH.label_
-              [ case t.status of
-                     Idle ->
-                       HH.input
-                       [ HP.type_ HP.InputCheckbox
-                       , HP.checked t.chosen
-                       , HE.onChecked (HE.input (OnCheck n)) ]
-                     Waiting -> HH.img [class_ "status", HP.src "img/three.svg"]
-                     Success -> HH.img [class_ "status", HP.src "img/bookmark.svg"]
-                     Error x -> HH.img [class_ "status", HP.src "img/issue.svg"]
-              , HH.img [class_ "favicon", HP.src (fromMaybe "" t.favIcon)]
-              , case t.status of
-                     Idle ->
-                       HH.input
-                       [ class_ "title"
-                       , HP.type_ HP.InputText
-                       , HP.value t.title
-                       , HE.onValueInput (HE.input (OnTitle n)) ]
-                     Error x -> HH.div [class_ "title"] [ HH.text x ]
-                     _       -> HH.div [class_ "title"] [ HH.text t.title ]
-              , HH.div [class_ "url"] [ HH.text t.url ] ] ] ]
+      , HH.ul
+        [ PH.class_ "tabs" ]
+        $ flip mapWithIndex s.tabs \n tab ->
+          HH.li
+          [ PH.class_ case tab.status of
+                        Idle -> "idle"
+                        _    -> "" ]
+          [ HH.label_
+            [ case tab.status of
+                Waiting -> HH.img [ PH.class_ "status", HP.src "img/three.svg" ]
+                Success -> HH.img [ PH.class_ "status", HP.src "img/bookmark.svg" ]
+                Error x -> HH.img [ PH.class_ "status", HP.src "img/issue.svg" ]
+                Idle ->
+                  HH.input
+                  [ HP.type_ HP.InputCheckbox
+                  , HP.checked tab.chosen
+                  , HE.onChecked (HE.input (OnCheck n))
+                  ]
 
-    eval :: Query i m ~> DSL i m
+            , case tab.favIcon of
+                Nothing  -> HH.text ""
+                Just ""  -> HH.text ""
+                Just url -> HH.img [ PH.class_ "favicon", HP.src url ]
+
+            , case tab.status of
+                Idle ->
+                  HH.input
+                  [ PH.class_ "title"
+                  , HP.type_ HP.InputText
+                  , HP.value tab.title
+                  , HP.required true
+                  , HP.spellcheck false
+                  , HP.autocomplete false
+                  , HE.onValueInput (HE.input (OnTitle n))
+                  ]
+                Error x -> HH.div [ PH.class_ "title "] [ HH.text x ]
+                _       -> HH.div [ PH.class_ "title "] [ HH.text tab.title ]
+
+            , HH.div [ PH.class_ "url" ] [ HH.text tab.url ]
+            ]
+          ]
+      ]
+
+    eval :: Query m ~> DSL m
     eval q = case q of
-      Recv i k -> k <$ do
-        H.put (initialState i)
+      -- The options page has changed the configuration
+      Recv (Tuple c _) k -> k <$ do
+        H.modify (\s -> s { config    = c
+                          , tabs      = map (_{ status = Idle }) s.tabs
+                          , readLater = c.defaults.readLater
+                          , private   = c.defaults.private
+                          , replace   = c.defaults.replace })
+
+      OnTitle n value k -> k <$ do
+        H.modify (updateTab n (_{ title = value }))
+
+      OnCheck n value k -> k <$ do
+        H.modify (updateTab n (_{ chosen = value }))
+
+      OnReadLater value k -> k <$ do
+        H.modify (_{ readLater = value })
+
+      OnPrivate value k -> k <$ do
+        H.modify (_{ private = value })
+
+      OnReplace value k -> k <$ do
+        H.modify (_{ replace = value })
+
+      FromTagInput tags k -> k <$ do
+        toText <- H.gets _.config.tags.textValue
+        H.modify (_{ tags = map toText tags })
 
       Save e k -> k <$ do
         noBubble e
-        State s <- H.get
+        s <- H.get
 
-        forWithIndex s.tabs \n t ->
-          when (t.chosen && t.status == Idle) $ unit <$ H.fork do
-            H.modify (updateTab n (_ { status = Waiting }))
+        forWithIndex s.tabs \n tab ->
+          when (tab.chosen && tab.status == Idle) $ unit <$ H.fork do
+            H.modify (updateTab n (_{ status = Waiting }))
 
-            res <- lift $ runReaderT (postsAdd t.url t.title (addOptions
-                    { tags    = Just s.tags
-                    , replace = Just s.replace
-                    , shared  = Just (not s.private)
-                    , toread  = Just s.readLater })) s.config.authToken
+            -- NOTE: There doesn't seem to be much benefit in running
+            -- these requests in parallel; otherwise H.fork could be used
+            res <- H.lift $ addOptions
+                            { tags    = Just s.tags
+                            , replace = Just s.replace
+                            , shared  = Just (not s.private)
+                            , toread  = Just s.readLater }
+                          # postsAdd s.config.authToken tab.url tab.title
 
-            eval (ApiPostAdd n res k)
-
-      OnTitle n value k -> k <$ do
-        H.modify (updateTab n (_ { title = value }))
-
-      OnCheck n value k -> k <$ do
-        H.modify (updateTab n (_ { chosen = value }))
-
-      OnReadLater value k -> k <$ do
-        H.modify (over State (_ { readLater = value }))
-
-      OnPrivate value k -> k <$ do
-        H.modify (over State (_ { private = value }))
-
-      OnReplace value k -> k <$ do
-        H.modify (over State (_ { replace = value }))
-
-      ApiPostAdd n res k -> k <$ do
-        case res of
-             Right x -> H.modify (updateTab n (_ { status = Success }))
-             Left x  -> let msg = case x of
-                                       ServerError m -> "Server: " <> m
-                                       DecodeError m -> "JSON: "   <> m
-                         in H.modify (updateTab n (_ { status = Error msg }))
-
-      FromTagWidget o k -> k <$
-        case o of
-          TI.OnChosen xs -> do
-            State s <- H.get
-            H.modify (over State (_ { tags = map s.config.tags.textValue xs }))
+            case res of
+              Right _  -> H.modify (updateTab n (_{ status = Success }))
+              Left err ->
+                let x = case err of
+                          JsonError msg -> "JSON: "  <> msg
+                          UserError msg -> "Server: " <> msg
+                          HttpError 401 -> "Incorrect API token"
+                          HttpError code -> "HTTP " <> show code
+                 in H.modify (updateTab n (_{ status = Error x }))
 
 
-updateTab :: forall i m. Int -> (Tab -> Tab) -> State i m -> State i m
-updateTab n f (State s) = case modifyAt n f s.tabs of
-  Nothing -> State s
-  Just ts -> State (s { tabs = ts })
+updateTab :: forall m. Int -> (Tab -> Tab) -> State m -> State m
+updateTab tabIndex f s = case modifyAt tabIndex f s.tabs of
+  Nothing -> s
+  Just ts -> s { tabs = ts }
 
 
 noBubble
-  :: forall e i m
+  :: forall e m
    . MonadAff (dom :: DOM | e) m
-  => ET.MouseEvent
-  -> DSL i m Unit
-noBubble = H.liftEff <<< E.preventDefault <<< ET.mouseEventToEvent
+  => MouseEvent
+  -> DSL m Unit
+noBubble = H.liftEff <<< preventDefault <<< mouseEventToEvent

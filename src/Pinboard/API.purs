@@ -1,37 +1,39 @@
 module Pinboard.API
   ( AuthToken
-  , postsUpdate
+  , authToken
+  , notesGet
+  , notesList
   , postsAdd
+  , postsAll
+  , postsDates
   , postsDelete
   , postsGet
   , postsRecent
-  , postsDates
-  , postsAll
   , postsSuggest
-  , tagsGet
+  , postsUpdate
   , tagsDelete
+  , tagsGet
   , tagsRename
-  , userSecret
   , userApiToken
-  , notesList
-  , notesGet
+  , userSecret
   , module Pinboard.API.Types
   ) where
 
 import Prelude
-import Global                     (readFloat)
+import Chrome.Storage.Storable    (class ToStorable)
 import Control.Monad.Jax.Class    (class MonadJax, affjax)
-import Control.Monad.Reader.Class (class MonadAsk, ask)
 import Data.Argonaut.Core         (Json, fromString)
-import Data.Argonaut.Parser       as J
+import Data.Argonaut.Parser       (jsonParser)
+import Data.DateTime              (DateTime)
 import Data.Either                (Either(..), either)
 import Data.Maybe                 (Maybe(..))
-import Data.Tuple                 (Tuple(..))
-import Data.DateTime              (DateTime)
-import Data.Traversable           (traverse, sequence)
 import Data.StrMap                (toArrayWithKey)
-import Network.HTTP.Affjax        (AJAX, AffjaxRequest, defaultRequest)
+import Data.Traversable           (traverse, sequence)
+import Data.Tuple                 (Tuple(..), fst)
+import Global                     (readFloat)
+import Network.HTTP.Affjax        (AffjaxRequest, defaultRequest)
 import Network.HTTP.StatusCode    (StatusCode(..))
+import Unsafe.Coerce              (unsafeCoerce)
 
 import Pinboard.API.Types
   ( AddOptions
@@ -71,59 +73,74 @@ import Pinboard.API.Decode
   , decodePropWith
   , decodeString )
 
+-------------------------------------------------------------------------------
 
-type AuthToken = String
+newtype AuthToken = AuthToken String
 
+authToken :: String -> AuthToken
+authToken = AuthToken
+
+instance showAuthToken :: Show AuthToken where
+  show (AuthToken x) = x
+
+instance toStorableAuthToken :: ToStorable AuthToken where
+  toStorable = unsafeCoerce
+
+-------------------------------------------------------------------------------
 
 -- | Returns the most recent time any bookmark was added, updated or deleted.
 postsUpdate
   :: forall m
    . MonadJax m
-  => MonadAsk AuthToken m
-  => m (Either Error DateTime)
-postsUpdate = decode <$> (affjax =<< makeReq_ "posts/update")
+  => AuthToken
+  -> m (Either Error DateTime)
+postsUpdate auth =
+  map decode (makeReq_ auth "posts/update" # affjax)
   where
     decode r = do
-      _ <- validateStatus r.status
-      j <- jsonParser r.response
-      o <- decodeObject root j
-      decodePropWith decodeDate "update_time" o
+      validateStatus r.status
+      decodePropWith decodeDate "update_time"
+        =<< decodeObject root
+        =<< decodeJson r.response
 
 
 -- | Add a bookmark.
 postsAdd
   :: forall m
    . MonadJax m
-  => MonadAsk AuthToken m
-  => Url
+  => AuthToken
+  -> Url
   -> Title
   -> AddOptions
   -> m (Either Error Unit)
-postsAdd url description options = decode <$> (affjax =<< makeReq "posts/add" query)
+postsAdd auth url description options =
+  map decode (makeReq auth "posts/add" query # affjax)
   where
     decode r = do
-      _ <- validateStatus r.status
-      j <- jsonParser r.response
-      validateCode "result_code" j
+      validateStatus r.status
+      validateCode "result_code" =<< decodeJson r.response
 
-    query = toQuery [ Tuple "url" url
-                    , Tuple "description" description
-                    ] <> toQuery (AddOptions' options)
+    query =
+      toQuery
+      [ Tuple "url" url
+      , Tuple "description" description
+      ] <> toQuery (AddOptions' options)
 
 
 -- | Delete a bookmark.
 postsDelete
   :: forall m
    . MonadJax m
-  => MonadAsk AuthToken m
-  => Url
+  => AuthToken
+  -> Url
   -> m (Either Error Unit)
-postsDelete url = decode <$> (affjax =<< makeReq "posts/delete" (Tuple "url" url))
+postsDelete auth url =
+  map decode (makeReq auth "posts/delete" (Tuple "url" url) # affjax)
   where
     decode r = do
       validateStatus r.status
-      j <- jsonParser r.response
-      validateCode "result_code" j
+      validateCode "result_code"
+        =<< decodeJson r.response
 
 
 -- | Returns one or more posts on a single day matching the arguments. If
@@ -131,49 +148,52 @@ postsDelete url = decode <$> (affjax =<< makeReq "posts/delete" (Tuple "url" url
 postsGet
   :: forall m
    . MonadJax m
-  => MonadAsk AuthToken m
-  => GetOptions
+  => AuthToken
+  -> GetOptions
   -> m (Either Error (Array Post))
-postsGet options = decode <$> (affjax =<< makeReq "posts/get" (GetOptions' options))
+postsGet auth options =
+  map decode (makeReq auth "posts/get" (GetOptions' options) # affjax)
   where
     decode r = do
-      _ <- validateStatus r.status
-      j <- jsonParser r.response
-      o <- decodeObject root j
-      decodePropWith decodePosts "posts" o
+      validateStatus r.status
+      decodePropWith decodePosts "posts"
+        =<< decodeObject root
+        =<< decodeJson r.response
 
 
 -- | Returns a list of the user's most recent posts, filtered by tag.
 postsRecent
   :: forall m
    . MonadJax m
-  => MonadAsk AuthToken m
-  => RecentOptions
+  => AuthToken
+  -> RecentOptions
   -> m (Either Error (Array Post))
-postsRecent options =
-  decode <$> (affjax =<< makeReq "posts/recent" (RecentOptions' options))
+postsRecent auth options =
+  map decode (makeReq auth "posts/recent" (RecentOptions' options) # affjax)
   where
     decode r = do
       validateStatus r.status
-      j <- jsonParser r.response
-      decodePosts root j
+      decodePosts root
+        =<< decodeJson r.response
 
 
 -- | Returns a list of dates with the number of posts at each date.
 postsDates
   :: forall m
    . MonadJax m
-  => MonadAsk AuthToken m 
-  => Maybe (Array Tag)
+  => AuthToken
+  -> Maybe (Array Tag)
   -> m (Either Error (Array (Tuple DateTime Number)))
-postsDates options =
-  decode <$> (affjax =<< makeReq "posts/dates" (Tuple "tag" <$> sequence options))
+postsDates auth options =
+  map decode (makeReq auth "posts/dates" query # affjax)
   where
+    query = Tuple "tag" <$> sequence options
     decode r = do
-      _ <- validateStatus r.status
-      j <- jsonParser r.response
-      o <- decodeObject root j
-      traverse op (toArrayWithKey Tuple o)
+      validateStatus r.status
+      traverse op
+        <<< toArrayWithKey Tuple
+        =<< decodeObject root
+        =<< decodeJson r.response
 
     op (Tuple k v) =
       Tuple <$> decodeDate root (fromString k)
@@ -184,15 +204,15 @@ postsDates options =
 postsAll
   :: forall m
    . MonadJax m
-  => MonadAsk AuthToken m
-  => AllOptions
+  => AuthToken
+  -> AllOptions
   -> m (Either Error (Array Post))
-postsAll options = decode <$> (affjax =<< makeReq "posts/all" (AllOptions' options))
+postsAll auth options =
+  map decode (makeReq auth "posts/all" (AllOptions' options) # affjax)
   where
     decode r = do
-      _ <- validateStatus r.status
-      j <- jsonParser r.response
-      decodePosts root j
+      validateStatus r.status
+      decodePosts root =<< decodeJson r.response
 
 
 -- | Returns a list of popular tags and recommended tags for a given URL.
@@ -201,126 +221,142 @@ postsAll options = decode <$> (affjax =<< makeReq "posts/all" (AllOptions' optio
 postsSuggest
   :: forall m
    . MonadJax m
-  => MonadAsk AuthToken m
-  => Url
+  => AuthToken
+  -> Url
   -> m (Either Error Suggestions)
-postsSuggest url = decode <$> (affjax =<< makeReq "posts/suggest" (Tuple "url" url))
+postsSuggest auth url =
+  map decode (makeReq auth "posts/suggest" (Tuple "url" url) # affjax)
   where
     decode r = do
       _ <- validateStatus r.status
-      j <- jsonParser r.response
-      o <- decodeObject root j
-      { popular: _, recommended: _ } <$>
-        decodePropWith
-          (\name x -> traverse (decodeString name) =<< decodeArray name x)
-          "popular" o <*>
-        decodePropWith
-          (\name x -> traverse (decodeString name) =<< decodeArray name x)
-          "recommended" o
+      o <- decodeObject root =<< decodeJson r.response
+      { popular: _, recommended: _ }
+        <$> flip decodePropWith "popular" (\name x ->
+              traverse (decodeString name) =<< decodeArray name x) o
+        <*> flip decodePropWith "recommended" (\name x ->
+              traverse (decodeString name) =<< decodeArray name x) o
 
 
 -- | Returns a full list of the user's tags along with the number of
 -- | times they were used.
+tagsGetWithCounts
+  :: forall m
+   . MonadJax m
+  => AuthToken
+  -> m (Either Error (Array (Tuple Tag Number)))
+tagsGetWithCounts auth =
+  map decode (makeReq_ auth "tags/get" # affjax)
+  where
+    decode r = do
+      validateStatus r.status
+      traverse op
+        <<< toArrayWithKey Tuple
+        =<< decodeObject root =<< decodeJson r.response
+
+    op (Tuple k v) =
+      Tuple k <$> map readFloat (decodeString root v)
+
+
+-- | Returns a full list of the user's tags
 tagsGet
   :: forall m
    . MonadJax m
-  => MonadAsk AuthToken m
-  => m (Either Error (Array (Tuple Tag Number)))
-tagsGet = decode <$> (affjax =<< makeReq_ "tags/get")
-  where
-    decode r = do
-      _ <- validateStatus r.status
-      j <- jsonParser r.response
-      o <- decodeObject root j
-      traverse op (toArrayWithKey Tuple o)
-    op (Tuple k v) = Tuple k <$> map readFloat (decodeString root v)
+  => AuthToken
+  -> m (Either Error (Array Tag))
+tagsGet auth =
+  map (map fst) <$> tagsGetWithCounts auth
 
 
 -- | Delete an existing tag.
 tagsDelete
   :: forall m
    . MonadJax m
-  => MonadAsk AuthToken m
-  => Tag
+  => AuthToken
+  -> Tag
   -> m (Either Error Unit)
-tagsDelete tag = decode <$> (affjax =<< makeReq "tags/delete" (Tuple "tag" tag))
+tagsDelete auth tag =
+  map decode (makeReq auth "tags/delete" (Tuple "tag" tag) # affjax)
   where
     decode r = do
-      _ <- validateStatus r.status
-      j <- jsonParser r.response
-      validateCode "result" j
+      validateStatus r.status
+      validateCode "result" =<< decodeJson r.response
 
 
 -- | Rename an tag, or fold it in to an existing tag.
 tagsRename
   :: forall m
    . MonadJax m
-  => MonadAsk AuthToken m
-  => Old Tag
+  => AuthToken
+  -> Old Tag
   -> New Tag
   -> m (Either Error Unit)
-tagsRename (Old old) (New new) = decode <$> (affjax =<< makeReq "tags/rename" query)
+tagsRename auth (Old old) (New new) =
+  map decode (makeReq auth "tags/rename" query # affjax)
   where
-    query    = [Tuple "old" old, Tuple "new" new]
+    query = [Tuple "old" old, Tuple "new" new]
     decode r = do
-      _ <- validateStatus r.status
-      j <- jsonParser r.response
-      validateCode "result" j
+      validateStatus r.status
+      validateCode "result" =<< decodeJson r.response
 
 
 -- | Returns the user's secret RSS key (for viewing private feeds).
 userSecret
   :: forall m
    . MonadJax m
-  => MonadAsk AuthToken m
-  => m (Either Error String)
-userSecret = decode <$> (affjax =<< makeReq_ "user/secret")
+  => AuthToken
+  -> m (Either Error String)
+userSecret auth =
+  map decode (makeReq_ auth "user/secret" # affjax)
   where
     decode r = do
-      _ <- validateStatus r.status
-      j <- jsonParser r.response
-      o <- decodeObject root j
-      decodePropWith decodeString "result" o
+      validateStatus r.status
+      decodePropWith decodeString "result"
+        =<< decodeObject root
+        =<< decodeJson r.response
 
 
 -- | Returns the user's API token (for making API calls without a password)
 userApiToken
   :: forall m
    . MonadJax m
-  => MonadAsk AuthToken m
-  => m (Either Error String)
-userApiToken = decode <$> (affjax =<< makeReq_ "user/api_token")
+  => AuthToken
+  -> m (Either Error AuthToken)
+userApiToken auth =
+  map decode (makeReq_ auth "user/api_token" # affjax)
   where
     decode r = do
-      _ <- validateStatus r.status
-      j <- jsonParser r.response
-      o <- decodeObject root j
-      decodePropWith decodeString "result" o
+      validateStatus r.status
+      map authToken
+        $ decodePropWith decodeString "result"
+        =<< decodeObject root
+        =<< decodeJson r.response
 
 
 -- | Returns a list of the user's notes
 notesList
   :: forall m
    . MonadJax m
-  => MonadAsk AuthToken m
-  => m (Either Error (Array Note))
-notesList = decode <$> (affjax =<< makeReq_ "notes/list")
+  => AuthToken
+  -> m (Either Error (Array Note))
+notesList auth =
+  map decode (makeReq_ auth "notes/list" # affjax)
   where
     decode r = do
-      _ <- validateStatus r.status
-      j <- jsonParser r.response
-      o <- decodeObject root j
-      n <- decodePropWith decodeArray "notes" o
-      traverse decodeNote n
+      validateStatus r.status
+      traverse decodeNote
+        =<< decodePropWith decodeArray "notes"
+        =<< decodeObject root
+        =<< decodeJson r.response
+
     decodeNote x = do
       o <- decodeObject (Just "notes") x
-      { id: _, hash: _, title: _, length: _, createdAt: _, updatedAt: _, text: "" } <$>
-        decodePropWith decodeString "id" o           <*>
-        decodePropWith decodeString "hash" o         <*>
-        decodePropWith decodeString "title" o        <*>
-        decodePropWith decodeNumber "length" o       <*> -- TODO "35"
-        decodePropWith decodeDate   "created_at" o   <*>
-        decodePropWith decodeDate   "updated_at" o
+      { id: _, hash: _, title: _, length: _, createdAt: _, updatedAt: _, text: "" }
+        <$> decodePropWith decodeString "id" o
+        <*> decodePropWith decodeString "hash" o
+        <*> decodePropWith decodeString "title" o
+        <*> decodePropWith decodeNumber "length" o -- TODO
+        <*> decodePropWith decodeDate "created_at" o
+        <*> decodePropWith decodeDate "updated_at" o
 
 
 -- | Returns an individual user note. The hash property is a 20 character
@@ -328,67 +364,80 @@ notesList = decode <$> (affjax =<< makeReq_ "notes/list")
 notesGet
   :: forall m
    . MonadJax m
-  => MonadAsk AuthToken m
-  => String
+  => AuthToken
+  -> String
   -> m (Either Error Note)
-notesGet id = decode <$> (affjax =<< makeReq_ ("notes/" <> id))
+notesGet auth id =
+  map decode (makeReq_ auth ("notes/" <> id) # affjax)
   where
     decode r = do
       _ <- validateStatus r.status
-      j <- jsonParser r.response
-      o <- decodeObject root j
-      { id: _, text: _, hash: _, title: _, length: _, createdAt: _, updatedAt: _ } <$>
-        decodePropWith decodeString "id" o          <*>
-        decodePropWith decodeString "text" o        <*>
-        decodePropWith decodeString "hash" o        <*>
-        decodePropWith decodeString "title" o       <*>
-        decodePropWith decodeNumber "length" o      <*>
-        decodePropWith decodeDate   "created_at" o  <*>
-        decodePropWith decodeDate   "updated_at" o
+      o <- decodeObject root =<< decodeJson r.response
+      { id: _, text: _, hash: _, title: _, length: _, createdAt: _, updatedAt: _ }
+        <$> decodePropWith decodeString "id" o
+        <*> decodePropWith decodeString "text" o
+        <*> decodePropWith decodeString "hash" o
+        <*> decodePropWith decodeString "title" o
+        <*> decodePropWith decodeNumber "length" o
+        <*> decodePropWith decodeDate "created_at" o
+        <*> decodePropWith decodeDate "updated_at" o
 
--------------------------------------------------------------------------------
--- Internal
 -------------------------------------------------------------------------------
 
 baseUrl :: String
 baseUrl = "https://api.pinboard.in/v1/"
 
-makeReq_
-  :: forall m
-   . MonadAsk AuthToken m
-  => String
-  -> m (AffjaxRequest Unit)
-makeReq_ path = do
-  authToken <- ask
-  let query  = toQuery [Tuple "format" "json", Tuple "auth_token" authToken]
-  pure (defaultRequest { url = baseUrl <> path <> printQuery query })
 
+-- | Construct a request that has no query parameters
+makeReq_
+  :: AuthToken
+  -> String
+  -> AffjaxRequest Unit
+makeReq_ (AuthToken auth) path =
+  defaultRequest { url = baseUrl <> path <> printQuery query }
+  where
+    query =
+      toQuery
+      [ Tuple "format" "json"
+      , Tuple "auth_token" auth ]
+
+
+-- | Construct a request with given query parameters
 makeReq
-  :: forall m a
-   . MonadAsk AuthToken m
-  => ToQuery a
-  => String
-  -> a
-  -> m (AffjaxRequest Unit)
-makeReq path q = do
-  authToken <- ask
-  let query  = toQuery [Tuple "format" "json", Tuple "auth_token" authToken] <> toQuery q
-  pure (defaultRequest { url = baseUrl <> path <> printQuery query })
+  :: forall q
+   . ToQuery q
+  => AuthToken
+  -> String
+  -> q
+  -> AffjaxRequest Unit
+makeReq (AuthToken auth) path params =
+  defaultRequest { url = baseUrl <> path <> printQuery query }
+  where
+    query =
+      toQuery
+      [ Tuple "format" "json"
+      , Tuple "auth_token" auth ]
+      <> toQuery params
+
 
 validateStatus :: StatusCode -> Either Error Unit
-validateStatus (StatusCode 200) = Right unit
-validateStatus (StatusCode x)   = Left (ServerError ("HTTP " <> show x))
+validateStatus s = case s of
+  StatusCode 200  -> Right unit
+  StatusCode code -> Left (HttpError code)
+
 
 validateCode :: String -> Json -> Either Error Unit
 validateCode name x = do
   o <- decodeObject root x
-  z <- decodePropWith decodeString name o
-  if z == "done"
+  c <- decodePropWith decodeString name o
+  if c == "done"
     then Right unit
-    else Left (ServerError z)
+    else Left (UserError c)
 
-jsonParser :: String -> Either Error Json
-jsonParser = either (Left <<< DecodeError) Right <<< J.jsonParser
+
+decodeJson :: String -> Either Error Json
+decodeJson = either (Left <<< JsonError) Right <<< jsonParser
+
 
 root :: Name
-root = Just "<root>"
+root = Just "root"

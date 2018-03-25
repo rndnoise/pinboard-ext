@@ -1,38 +1,40 @@
-module Pinboard.UI.Popup.Single where
+module Pinboard.UI.Popup.Single
+  ( component
+  , Input
+  , Output
+  , Query
+  , State
+  , Status
+  ) where
 
 import Prelude
-import Data.Array                 (uncons)
-import Data.DateTime              (DateTime)
-import Data.Either                (Either(..), either)
-import Data.Maybe                 (Maybe(..), fromMaybe, isJust)
-import Data.Newtype               (class Newtype, over, unwrap, wrap)
-import Data.Monoid                (guard)
-import Data.Formatter.DateTime    (formatDateTime)
-import Data.Tuple                 (Tuple(..))
-import Control.Monad.Aff.Class    (class MonadAff)
-import Control.Monad.Jax.Class    (class MonadJax)
-import Control.Monad.Reader.Trans (runReaderT)
-import Control.Monad.Trans.Class  (lift)
-import Control.Monad.Eff.Now      (NOW, nowDateTime)
-import Control.Comonad            (extract)
-import Network.HTTP.Affjax        (AJAX)
-import DOM                        (DOM)
-import DOM.Event.Event            as E
-import DOM.Event.Types            as ET
-import Halogen                    as H
-import Halogen.HTML               as HH
-import Halogen.HTML.Events        as HE
-import Halogen.HTML.Properties    as HP
-
-import Chrome.Tabs.Tab          (Tab, title, url) as CT
-import Control.Monad.Aff.AVar   (AVAR)
-
-import Pinboard.Config                (Config)
+import Chrome.Tabs.Tab                (Tab, title, url) as CT
+import Control.Comonad                (extract)
+import Control.Monad.Aff.AVar         (AVAR)
+import Control.Monad.Aff.Class        (class MonadAff)
+import Control.Monad.Eff.Now          (NOW, nowDateTime)
+import Control.Monad.Jax.Class        (class MonadJax)
+import DOM                            (DOM)
+import DOM.Event.Event                (preventDefault)
+import DOM.Event.Types                (MouseEvent, mouseEventToEvent)
+import Data.Array                     (uncons)
+import Data.DateTime                  (DateTime)
+import Data.Either                    (Either(..), either)
+import Data.Formatter.DateTime        (formatDateTime)
+import Data.Maybe                     (Maybe(..), fromMaybe, isJust, isNothing)
+import Data.Monoid                    (guard)
+import Data.Tuple                     (Tuple(..))
+import Halogen                        as H
+import Halogen.HTML                   as HH
+import Halogen.HTML.Events            as HE
+import Halogen.HTML.Properties        as HP
+import Network.HTTP.Affjax            (AJAX)
+import Pinboard.Config                (Config, Tag)
 import Pinboard.UI.Component.TagInput as TI
-import Pinboard.UI.Internal.HTML      (class_)
+import Pinboard.UI.Internal.HTML      as PH
+
 import Pinboard.API
-  ( Post
-  , Error(..)
+  ( Error(..)
   , postsGet
   , postsAdd
   , postsDelete
@@ -41,69 +43,62 @@ import Pinboard.API
 
 -------------------------------------------------------------------------------
 
-newtype State i m = State
-  { title       :: String
-  , url         :: String
-  , desc        :: String
-  , tags        :: Array String
-  , readLater   :: Boolean
-  , private     :: Boolean
-  , time        :: Maybe DateTime
-  , config      :: Config i m
-  , status      :: Status }
-
-derive instance newtypeState :: Newtype (State i m) _
+type State m =
+  { title     :: String
+  , url       :: String
+  , desc      :: String
+  , tags      :: Array String
+  , readLater :: Boolean
+  , private   :: Boolean
+  , time      :: Maybe DateTime
+  , config    :: Config m
+  , status    :: Status }
 
 data Status
-  = Error String
-  | Normal String
+  = Info String
+  | Error String
   | Success String
 
-data Query i m k
+data Query m k
   = Init k
-  | Recv (Input i m) k
+  | Recv (Input m) k
   | OnUrl String k
   | OnTitle String k
   | OnDesc String k
   | OnReadLater Boolean k
   | OnPrivate Boolean k
-  | Save ET.MouseEvent k
-  | Delete ET.MouseEvent k
-  | ApiPostGet (Either Error (Array Post)) k
-  | ApiPostAdd (Either Error Unit) k
-  | ApiPostDelete (Either Error Unit) k
-  | FromTagInput (TI.Output i) k
+  | Save MouseEvent k
+  | Delete MouseEvent k
+  | FromTagInput (TI.Output Tag) k
 
-type Input i m = Tuple (Config i m) (Maybe CT.Tab)
-type Output    = Void
+type Input m = Tuple (Config m) (Maybe CT.Tab)
+type Output  = Void
 
 data Slot = TagSlot
 derive instance eqSlot  :: Eq Slot
 derive instance ordSlot :: Ord Slot
 
-type HTML i m = H.ParentHTML (Query i m) (TI.Query i) Slot m
-type DSL i m  = H.ParentDSL (State i m) (Query i m) (TI.Query i) Slot Output m
+type HTML m = H.ParentHTML (Query m) (TI.Query Tag m) Slot m
+type DSL m  = H.ParentDSL (State m) (Query m) (TI.Query Tag m) Slot Output m
 
 -------------------------------------------------------------------------------
 
 component
-  :: forall i e m
+  :: forall e m
    . MonadAff (ajax :: AJAX, avar :: AVAR, dom :: DOM, now :: NOW | e) m
   => MonadJax m
-  => Eq i
-  => H.Component HH.HTML (Query i m) (Input i m) Output m
+  => H.Component HH.HTML (Query m) (Input m) Output m
 component =
   H.lifecycleParentComponent
   { initialState
   , render
   , eval
-  , receiver:    const Nothing
   , finalizer:   Nothing
-  , initializer: Just (H.action Init) }
+  , initializer: Just (H.action Init)
+  , receiver:    \i -> Just (Recv i unit) }
   where
-    initialState :: Input i m -> State i m
+    initialState :: Input m -> State m
     initialState (Tuple config tab) =
-      State
       { title:      fromMaybe "" (CT.title =<< tab)
       , url:        fromMaybe "" (CT.url   =<< tab)
       , desc:       ""
@@ -111,166 +106,188 @@ component =
       , readLater:  config.defaults.readLater
       , private:    config.defaults.private
       , time:       Nothing
-      , status:     Normal ""
+      , status:     Info "Checking..."
       , config }
 
-    render :: State i m -> HTML i m
-    render (State s) =
-      HH.form [HP.id_ "single"]
-      [ renderStatus s.status
-      , HH.div [class_ "urgh"] $
-        [ HH.label [class_ "text"]
+    render :: State m -> HTML m
+    render s =
+      HH.form
+      [ HP.id_ "single" ]
+      [ case s.status of
+          Info x    -> HH.div [PH.class_ "status light"   ] [ HH.text x ]
+          Error x   -> HH.div [PH.class_ "status danger"  ] [ HH.text x ]
+          Success x -> HH.div [PH.class_ "status success" ] [ HH.text x ]
+
+      , HH.div
+        [ PH.class_ "urgh" ] $
+        [ HH.label
+          [ PH.class_ "text" ]
           [ HH.text "URL:"
           , HH.input
             [ HP.type_ HP.InputUrl
             , HP.value s.url
-            , HE.onValueInput (HE.input OnUrl) ] ]
+            , HP.required true
+            , HP.spellcheck false
+            , HP.autocomplete false
+            , HE.onValueInput (HE.input OnUrl)
+            ]
+          ]
 
-        , HH.label [class_ "text"]
+        , HH.label
+          [ PH.class_ "text" ]
           [ HH.text "Title:"
           , HH.input
             [ HP.type_ HP.InputText
             , HP.value s.title
-            , HE.onValueInput (HE.input OnTitle) ] ]
+            , HP.required true
+            , HP.spellcheck false
+            , HP.autocomplete false
+            , HE.onValueInput (HE.input OnTitle)
+            ]
+          ]
 
-        , HH.label [class_ "select"]
+        , HH.label
+          [ PH.class_ "select" ]
           [ HH.text "Tags:"
-          , HH.slot TagSlot (TI.component s.config.tags) unit (HE.input FromTagInput) ]
+          , HH.slot TagSlot TI.component
+              (Tuple s.config.tags (map s.config.tags.parse s.tags))
+              (HE.input FromTagInput)
+          ]
 
-        , HH.label [class_ "textarea"]
+        , HH.label
+          [ PH.class_ "textarea" ]
           [ HH.text "Description:"
           , HH.textarea
             [ HP.value s.desc
-            , HE.onValueInput (HE.input OnDesc) ] ]
+            , HP.required false
+            , HP.spellcheck true
+            , HE.onValueInput (HE.input OnDesc)
+            ]
+          ]
 
-        , HH.label [class_ "checkbox"]
+        , HH.label
+          [ PH.class_ "checkbox" ]
           [ HH.input
             [ HP.type_ HP.InputCheckbox
             , HP.checked s.readLater
-            , HE.onChecked (HE.input OnReadLater) ]
-          , HH.text "Read later" ]
+            , HE.onChecked (HE.input OnReadLater)
+            ]
+          , HH.text "Read later"
+          ]
 
-        , HH.label [class_ "checkbox"]
+        , HH.label
+          [ PH.class_ "checkbox" ]
           [ HH.input
             [ HP.type_ HP.InputCheckbox
             , HP.checked s.private
-            , HE.onChecked (HE.input OnPrivate) ]
-          , HH.text "Private" ] ]
+            , HE.onChecked (HE.input OnPrivate)
+            ]
+          , HH.text "Private"
+          ]
+        ]
         <>
-        [ HH.button [class_ "primary", HE.onClick (HE.input Save)]
-          [ HH.text "Save" ] ]
+        [ HH.button
+          [ PH.class_ "primary"
+          , HE.onClick (HE.input Save)
+          ]
+          [ HH.text "Save" ]
+        ]
         <>
-        guard (isJust s.time)
-        [ HH.button [class_ "danger", HE.onClick (HE.input Delete)]
-          [ HH.text "Delete" ] ] ]
+       ([ HH.button
+          [ PH.class_ "danger"
+          , HE.onClick (HE.input Delete)
+          ]
+          [ HH.text "Delete" ]
+        ] # guard (isJust s.time))
+      ]
 
-      where
-        renderStatus (Error x) = HH.div [class_ "status danger"] [ HH.text x ]
-        renderStatus (Normal x) = HH.div [class_ "status light"] [ HH.text x ]
-        renderStatus (Success x) = HH.div [class_ "status success"] [ HH.text x ]
-
-    eval :: Query i m ~> DSL i m
+    eval :: Query m ~> DSL m
     eval q = case q of
       Init k -> k <$ do
-        H.modify (message "Checking...")
+        s <- H.get
+        r <- H.lift $ getOptions { url = Just s.url }
+                    # postsGet s.config.authToken
 
-        State s <- H.get
-        res     <- lift $ flip runReaderT s.config.authToken
-                            (postsGet (getOptions { url = Just s.url }))
-        eval (ApiPostGet res k)
+        unwrapResponse r \posts ->
+          case uncons posts of
+            Nothing ->
+              H.modify (_{ status = Info "New bookmark" })
 
-      Recv (Tuple config _) k -> k <$ do
-        H.modify (over State (_ { config = config }))
+            Just { head } -> do
+              let t = either id id (formatDateTime "MMM DD, YYYY" head.time)
+              H.modify (_{ status    = Info ("First bookmarked " <> t)
+                         , title     = head.description
+                         , desc      = head.extended
+                         , tags      = head.tags
+                         , readLater = head.toread
+                         , private   = not head.shared
+                         , time      = Just head.time })
 
-      -- user interaction events
+      -- The options page has changed the configuration
+      Recv (Tuple c _) k -> k <$ do
+        H.modify (_{ config = c })
+
+        -- Don't change flags if bookmark was already saved
+        whenM (H.gets (isNothing <<< _.time)) $
+          H.modify (_{ readLater = c.defaults.readLater
+                     , private   = c.defaults.private })
+
+      -- User interaction events
       Save e k -> k <$ do
         noBubble e
-        H.modify (message "Saving...")
+        H.modify (_{ status = Info "Saving..." })
 
-        State s <- H.get
-        res     <- lift $ flip runReaderT s.config.authToken
-                            (postsAdd s.url s.title (addOptions
-                              { extended  = Just s.desc
-                              , tags      = Just s.tags
-                              , replace   = Just true
-                              , shared    = Just false
-                              , toread    = Just s.readLater }))
-        eval (ApiPostAdd res k)
+        s <- H.get
+        r <- H.lift $ addOptions
+                    { extended  = Just s.desc
+                    , tags      = Just s.tags
+                    , replace   = Just true
+                    , shared    = Just (not s.private)
+                    , toread    = Just s.readLater }
+                    # postsAdd s.config.authToken s.url s.title
+
+        unwrapResponse r \_ -> do
+          now <- map extract (H.liftEff nowDateTime)
+          H.modify (_{ status = Info "Saved", time = Just now })
 
       Delete e k -> k <$ do
         noBubble e
-        H.modify (message "Deleting...")
+        H.modify (_{ status = Info "Deleting..." })
 
-        State s <- H.get
-        res     <- lift (runReaderT (postsDelete s.url) s.config.authToken)
-        eval (ApiPostDelete res k)
+        s <- H.get
+        r <- H.lift $ postsDelete s.config.authToken s.url
 
-      ApiPostGet res k -> k <$ unwrapResponse res \ps -> do
-        case uncons ps of
-          Nothing ->
-            H.modify (message "New bookmark")
+        unwrapResponse r \_ -> do
+          H.modify (_{ status = Success "Deleted", time = Nothing })
 
-          Just {head,tail} -> do
-            State s <- H.get
-            _       <- H.query TagSlot $ H.action (TI.SetChosen (map s.config.tags.parse head.tags))
+      OnUrl x k -> k <$ H.modify (_{ url = x })
+      OnDesc x k -> k <$ H.modify (_{ desc = x })
+      OnTitle x k -> k <$ H.modify (_{ title = x })
+      OnPrivate x k -> k <$ H.modify (_{ private = x })
+      OnReadLater x k -> k <$ H.modify (_{ readLater = x })
 
-            let fmt = either id id <<< formatDateTime "MMM DD, YYYY"
-            H.modify (message ("First bookmarked " <> fmt head.time))
-            H.modify (state (_ { title     = head.description
-                               , desc      = head.extended
-                               , tags      = head.tags
-                               , readLater = head.toread
-                               , private   = not head.shared
-                               , time      = Just head.time }))
-
-      ApiPostAdd res k -> k <$ unwrapResponse res \_ -> do
-        now <- extract <$> H.liftEff nowDateTime
-        H.modify (success "Saved" <<< state (_ { time = Just now }))
-
-      ApiPostDelete res k -> k <$ unwrapResponse res \_ -> do
-        H.modify (success "Deleted" <<< state (_ { time = Nothing }))
-
-      OnUrl x k ->       k <$ H.modify (state (_ { url = x }))
-      OnDesc x k ->      k <$ H.modify (state (_ { desc = x }))
-      OnTitle x k ->     k <$ H.modify (state (_ { title = x }))
-      OnPrivate x k ->   k <$ H.modify (state (_ { private = x }))
-      OnReadLater x k -> k <$ H.modify (state (_ { readLater = x }))
-
-      FromTagInput o k -> k <$ do
-        State s <- H.get
-
-        case o of
-          TI.OnChosen xs ->
-            H.modify (state (_ { tags = map s.config.tags.textValue xs }))
+      FromTagInput tags k -> k <$ do
+        toText <- H.gets _.config.tags.textValue
+        H.modify (_{ tags = map toText tags })
 
 
-unwrapResponse :: forall i m a. Either Error a -> (a -> DSL i m Unit) -> DSL i m Unit
+unwrapResponse
+  :: forall m a
+   . Either Error a
+  -> (a -> DSL m Unit)
+  -> DSL m Unit
 unwrapResponse (Right a) f = f a
-unwrapResponse (Left e) _  =
+unwrapResponse (Left e) _ =
   case e of
-       DecodeError msg -> H.modify (error ("JSON: "   <> msg))
-       ServerError msg -> H.modify (error ("Server: " <> msg))
+    JsonError msg  -> H.modify (_{ status = Error ("JSON: "  <> msg) })
+    UserError msg  -> H.modify (_{ status = Error ("Server: " <> msg) })
+    HttpError 401  -> H.modify (_{ status = Error "Incorrect API token" })
+    HttpError code -> H.modify (_{ status = Error ("HTTP " <> show code) })
 
 
 noBubble
-  :: forall e i m
+  :: forall e m
    . MonadAff (dom :: DOM | e) m
-  => ET.MouseEvent
-  -> DSL i m Unit
-noBubble = H.liftEff <<< E.preventDefault <<< ET.mouseEventToEvent
-
-
-state :: forall a i m. Newtype (State i m) a => (a -> a) -> (State i m -> State i m)
-state f = wrap <<< f <<< unwrap
-
-
-message :: forall i m. String -> (State i m -> State i m)
-message s = state (_ { status = Normal s })
-
-
-error :: forall i m. String -> (State i m -> State i m)
-error s = state (_ { status = Error s })
-
-
-success :: forall i m. String -> (State i m -> State i m)
-success s = state (_ { status = Success s })
+  => MouseEvent
+  -> DSL m Unit
+noBubble = H.liftEff <<< preventDefault <<< mouseEventToEvent

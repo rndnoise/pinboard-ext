@@ -1,12 +1,12 @@
 module Pinboard.API.Types
-  ( Url
+  ( Error(..)
+  , New(..)
+  , Note
+  , Old(..)
+  , Post
   , Tag
   , Title
-  , Old(..)
-  , New(..)
-  , Error(..)
-  , Post
-  , Note
+  , Url
   , AddOptions
   , addOptions
   , GetOptions
@@ -18,19 +18,25 @@ module Pinboard.API.Types
   , Suggestions
   ) where
 
-import Data.Maybe (Maybe(..))
-import Data.DateTime (DateTime)
+import Data.Maybe     (Maybe(..))
+import Data.DateTime  (DateTime)
+
+-------------------------------------------------------------------------------
 
 type Url = String
 type Tag = String
 type Title = String
 
+
 newtype New a = New a
 newtype Old a = Old a
 
+
 data Error
-  = DecodeError String
-  | ServerError String
+  = JsonError String
+  | UserError String
+  | HttpError Int
+
 
 type Post =
   { href        :: Url
@@ -44,6 +50,7 @@ type Post =
   , toread      :: Boolean
   , shared      :: Boolean }
 
+
 type Note =
   { id        :: String
   , title     :: String
@@ -53,6 +60,7 @@ type Note =
   , updatedAt :: DateTime
   , length    :: Number }
 
+
 type AddOptions = 
   { extended    :: Maybe String
   , tags        :: Maybe (Array Tag)
@@ -60,6 +68,7 @@ type AddOptions =
   , replace     :: Maybe Boolean
   , shared      :: Maybe Boolean
   , toread      :: Maybe Boolean }
+
 
 addOptions :: AddOptions
 addOptions =
@@ -70,11 +79,13 @@ addOptions =
   , shared:   Nothing
   , toread:   Nothing }
 
+
 type GetOptions =
   { tag   :: Maybe (Array Tag)
   , dt    :: Maybe DateTime
   , url   :: Maybe String
   , meta  :: Maybe Boolean }
+
 
 getOptions :: GetOptions
 getOptions =
@@ -83,9 +94,11 @@ getOptions =
   , url:  Nothing
   , meta: Nothing }
 
+
 type RecentOptions =
   { tag   :: Maybe (Array Tag)
   , count :: Maybe Int }
+
 
 recentOptions :: RecentOptions
 recentOptions =
@@ -101,6 +114,7 @@ type AllOptions =
   , todt    :: Maybe DateTime
   , meta    :: Maybe Int }
 
+
 allOptions :: AllOptions
 allOptions =
   { tag:      Nothing
@@ -109,6 +123,7 @@ allOptions =
   , fromdt:   Nothing
   , todt:     Nothing
   , meta:     Nothing }
+
 
 type Suggestions =
   { popular     :: Array Tag

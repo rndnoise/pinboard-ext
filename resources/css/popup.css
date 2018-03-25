@@ -17,25 +17,27 @@ button
   margin: 0 0 0 1rem; }
 
 .multi-icon,
-.single-icon
+.single-icon,
+.options-icon
 { width: 32px;
   height: 32px;
   position: absolute; }
 
 .multi-icon.active,
-.single-icon.active
+.single-icon.active,
+.options-icon.active
 { border: 1px solid #999;
   background-color: #fff;
   border-bottom: none; }
 
 .multi-icon.dormant,
-.single-icon.dormant
+.single-icon.dormant,
 { cursor: pointer;
-  background-color: #f0f0f0;
   border-bottom: 1px solid #999; }
 
-.multi-icon  { border-radius: 2px; right: 0px;  }
+.multi-icon { border-radius: 2px; right: 0px;  }
 .single-icon { border-radius: 2px; right: 32px; }
+.options-icon { border-radius: 2px; right: 64px; }
 
 div.status
 { width: 436px;
@@ -47,8 +49,9 @@ div.status
   overflow: hidden;
   border-bottom: 1px solid #999; }
 
-.dormant #multi,
-.dormant #single { display: none; }
+.dormant.multi,
+.dormant.single,
+.dormant.options { display: none; }
 
 /* single ********************************************************************/
 
@@ -123,3 +126,6 @@ div.status
   margin-top: 4px;
   width: 32px;
   height: 32px; }
+
+#options .urgh
+{ margin: 0.5rem 1rem 1rem 1rem; }

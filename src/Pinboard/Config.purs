@@ -5,132 +5,154 @@ module Pinboard.Config
   , loadConfig
   , saveConfig
   , saveTags
+  , tagConfig
   ) where
 
 import Prelude
-import Control.Monad.Aff              (Aff)
-import Control.Monad.Except           (runExcept)
-import Data.Array                     (elem, filter)
-import Data.Either                    (hush)
-import Data.Foreign                   (Foreign, F, readArray, readBoolean, readString)
-import Data.List                      (List(..), toUnfoldable)
-import Data.Maybe                     (Maybe, fromMaybe)
-import Data.Sequence                  (head)
-import Data.StrMap                    (StrMap, lookup, fromFoldable)
-import Data.Tuple                     (Tuple(..), fst, snd)
-import Data.Time.Duration             (Milliseconds(..))
-import Data.Traversable               (traverse)
-import Halogen.HTML                   as HH
+import Chrome.FFI                         (CHROME)
+import Chrome.Storage.Local               (getMulti, set)
+import Chrome.Storage.Storable            (toStorable)
+import Control.Monad.Aff                  (Aff)
+import Control.Monad.Except               (runExcept)
+import Data.Array                         (elem, filter)
+import Data.Either                        (hush)
+import Data.Foreign                       (Foreign, F, readArray, readBoolean, readString)
+import Data.List                          (List(..), toUnfoldable)
+import Data.Maybe                         (Maybe, fromMaybe)
+import Data.StrMap                        (StrMap, lookup, fromFoldable)
+import Data.Time.Duration                 (Milliseconds(..))
+import Data.Traversable                   (traverse)
+import Data.Tuple                         (Tuple(..), fst, snd)
+import Halogen.HTML                       as HH
+import Pinboard.API                       (AuthToken, authToken)
+import Pinboard.UI.Component.TagComplete  as TC
+import Pinboard.UI.Component.TagInput     as TI
+import Pinboard.UI.Internal.HTML          (class_)
 
-import Chrome.FFI                     (CHROME)
-import Chrome.Storage.Local           as LS
-import Chrome.Storage.Storable        (toStorable)
-import Pinboard.UI.Internal.HTML      (class_)
-import Pinboard.UI.Popup.Complete     as CC
-import Pinboard.UI.Component.TagInput as TI
-
+-------------------------------------------------------------------------------
 
 type Tag
-  = Tuple String CC.Result
+  = Tuple String TC.Result
 
+type Config m =
+  { tags        :: TI.Config Tag m
+    -- ^ Tag auto-complete settings
 
-type Config i m =
-  { tags      :: TI.Config i m
-  , authToken :: String
-  , defaults  :: Defaults }
+  , reloadTags  :: Array String -> TI.Config Tag m
+    -- ^ Creates a new auto-complete function given an array of tags
+
+  , authToken   :: AuthToken
+    -- ^ https://pinboard.in/settings/password
+
+  , defaults    :: Defaults }
 
 type Defaults =
-  { readLater  :: Boolean
-  , replace    :: Boolean
-  , private    :: Boolean }
+  { readLater :: Boolean
+    -- ^ Mark read later by default
 
+  , replace   :: Boolean
+    -- ^ Replace existing bookmarks by default
 
-loadConfig :: forall m eff. Applicative m => Aff (chrome :: CHROME | eff) (Config Tag m)
+  , private   :: Boolean }
+    -- ^ Make bookmarks private by default
+
+-------------------------------------------------------------------------------
+
+-- | Load configuration settings from localStorage
+loadConfig :: forall m eff. Applicative m => Aff (chrome :: CHROME | eff) (Config m)
 loadConfig =
-  decode <$> LS.getMulti [authToken, readLater, replace, private, tags]
+  decode <$> getMulti [_authToken, _readLater, _replace, _private, _tags]
   where
-    decode :: StrMap Foreign -> Config Tag m
+    decode :: StrMap Foreign -> Config m
     decode o =
-      { tags:       tagConfig (fromMaybe [] (try readTags =<< lookup tags o))
-      , authToken:  fromMaybe "" (try readString =<< lookup authToken o)
+      { tags:       tagConfig (try [] readTags (lookup _tags o))
+      , reloadTags: tagConfig
+      , authToken:  authToken $ try "" readString (lookup _authToken o)
       , defaults:
-        { readLater: fromMaybe false (try readBoolean =<< lookup readLater o)
-        , replace:   fromMaybe false (try readBoolean =<< lookup replace o)
-        , private:   fromMaybe true  (try readBoolean =<< lookup private o) }}
+        { readLater: try false readBoolean (lookup _readLater o)
+        , replace:   try false readBoolean (lookup _replace o)
+        , private:   try true  readBoolean (lookup _private o) }}
 
-    try :: forall a. (Foreign -> F a) -> Foreign -> Maybe a
-    try f = hush <<< runExcept <<< f
+    try :: forall a. a -> (Foreign -> F a) -> Maybe Foreign -> a
+    try x f m = fromMaybe x (try_ f =<< m)
+
+    try_ :: forall a. (Foreign -> F a) -> Foreign -> Maybe a
+    try_ f = hush <<< runExcept <<< f
 
     readTags :: Foreign -> F (Array String)
     readTags = traverse readString <=< readArray
 
 
+-- | Save configuration settings to localStorage
 saveConfig
-  :: forall eff i m
-   . Config i m
+  :: forall eff m
+   . Config m
   -> Aff (chrome :: CHROME | eff) Unit
 saveConfig cfg =
-  LS.set (fromFoldable
-           [ Tuple authToken (toStorable cfg.authToken)
-           , Tuple readLater (toStorable cfg.defaults.readLater)
-           , Tuple replace   (toStorable cfg.defaults.replace)
-           , Tuple private   (toStorable cfg.defaults.private) ])
+  set (fromFoldable
+       [ Tuple _authToken (toStorable cfg.authToken)
+       , Tuple _readLater (toStorable cfg.defaults.readLater)
+       , Tuple _replace   (toStorable cfg.defaults.replace)
+       , Tuple _private   (toStorable cfg.defaults.private) ])
 
 
+-- | Save set of tags to localStorage
 saveTags
   :: forall eff
    . Array String
   -> Aff (chrome :: CHROME | eff) Unit
-saveTags xs = LS.set (fromFoldable [Tuple tags (toStorable xs)])
+saveTags xs = set (fromFoldable [Tuple _tags (toStorable xs)])
 
 
+-- | Construct auto-completion settings for given array of tags
 tagConfig
   :: forall m
    . Applicative m
   => Array String
   -> TI.Config Tag m
-tagConfig corpus =
+tagConfig tags =
   { parse:        flip Tuple Nil
-    -- ^ convert the text buffer to a tag
+    -- ^ Convert the text buffer to a tag
 
   , textValue:    fst
-  -- ^ convert a tag to value that goes in an api request
+    -- ^ Convert a tag to value that goes in an api request
 
   , renderChoice: HH.text <<< fst
-    -- ^ render a chosen tag as html
+    -- ^ Render a chosen tag as html
 
   , renderOption: HH.span_ <<< toUnfoldable <<< map fmt <<< snd
-    -- ^ render a suggested tag as html
+    -- ^ Render a suggested tag as html
 
-  , suggest:      let search = CC.commonSubsequences corpus
+  , suggest:      let search = TC.matches tags
                    in \chosen buffer ->
-                     pure (map pick (filter (isnt chosen) (search buffer)))
+                     pure (filter (isnt chosen) (search buffer))
 
   , showDelay:    Milliseconds 150.0
+    -- ^ Wait this long before suggesting items
+
   , hideDelay:    Milliseconds 150.0 }
+    -- ^ Wait this long before hiding after losing focus
+
   where
-    -- don't suggest items that have already been chosen
+    -- Don't suggest items that have already been chosen
     isnt chosen (Tuple s _) = not (s `elem` (map fst chosen))
 
-    -- just pick the first way an item matched, ignore rest
-    pick (Tuple s rs) = Tuple s (fromMaybe Nil (head rs))
-
-    -- highlight the letters that matched
-    fmt (CC.M s) = HH.span [ class_ "matched "] [HH.text s]
-    fmt (CC.U s) = HH.span [ class_ "unmatch "] [HH.text s]
+    -- Highlight the letters that matched
+    fmt (TC.M s) = HH.span [class_ "matched"] [HH.text s]
+    fmt (TC.U s) = HH.span [class_ "unmatch"] [HH.text s]
 
 
-authToken :: String
-authToken = "pinboard.authToken"
+_authToken :: String
+_authToken = "pinboard.authToken"
 
-readLater :: String
-readLater = "pinboard.defaults.toRead"
+_readLater :: String
+_readLater = "pinboard.defaults.toRead"
 
-replace :: String
-replace = "pinboard.defaults.replace"
+_replace :: String
+_replace = "pinboard.defaults.replace"
 
-private :: String
-private = "pinboard.defaults.private"
+_private :: String
+_private = "pinboard.defaults.private"
 
-tags :: String
-tags = "pinboard.tags"
+_tags :: String
+_tags = "pinboard.tags"

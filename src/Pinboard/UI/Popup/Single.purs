@@ -248,7 +248,7 @@ component =
 
         unwrapResponse r \_ -> do
           now <- map extract (H.liftEff nowDateTime)
-          H.modify (_{ status = Info "Saved", time = Just now })
+          H.modify (_{ status = Success "Saved", time = Just now })
 
       Delete e k -> k <$ do
         noBubble e

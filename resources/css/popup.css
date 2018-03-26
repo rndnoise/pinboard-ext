@@ -1,4 +1,5 @@
 html { font-size: 14px; }
+body { font-size: 1rem; }
 
 /* both **********************************************************************/
 
@@ -52,6 +53,9 @@ div.status
 .dormant.multi,
 .dormant.single,
 .dormant.options { display: none; }
+
+.message
+{ margin-bottom: 0.5rem; }
 
 /* single ********************************************************************/
 

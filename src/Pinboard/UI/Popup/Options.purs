@@ -85,9 +85,15 @@ component =
         [ PH.class_ "urgh" ]
         [ HH.label
           [ PH.class_ "text" ]
-          [ HH.text "API token (see "
-          , HH.a [ HP.href "https://pinboard.in/settings/password" ] [ HH.text "pinboard.in/settings" ]
-          , HH.text " to view yours):"
+          [ HH.div
+            [ PH.class_ "message" ]
+            [ HH.text "See "
+            , HH.a
+              [ HP.target "_blank"
+              , HP.href "https://pinboard.in/settings/password" ]
+              [ HH.text "pinboard.in/settings" ]
+            , HH.text " to retrieve your API token"
+            ]
           , HH.input
             [ HP.type_ HP.InputText
             , HP.value (show s.config.authToken)

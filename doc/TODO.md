@@ -7,7 +7,6 @@ opera: extension
 ## bugs
 
 - prevent concurrent writes
-- focus tag input on open
 - don't save if nothing has changed
 - multi status text moves on save (firefox)
 ? remove #anchor from URLs
@@ -15,12 +14,16 @@ opera: extension
 ## new features
 
 - remember new tags
-- close popup after saved
-- suggest tags
 - use selected text as description
+- option to sort tags by name or frequency
+- option to enable/disable close on save
+- hot key to activate popup
+- suggest tags
 
 ## completed
 
+- close popup after saved
+- focus tag input on open
 - configuration
   - user token
   - download tag set

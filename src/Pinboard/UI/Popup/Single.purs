@@ -9,10 +9,10 @@ module Pinboard.UI.Popup.Single
 
 import Prelude
 import Chrome.Tabs.Tab                (Tab, title, url) as CT
-import Control.Comonad                (extract)
+-- ort Control.Comonad                (extract)
 import Control.Monad.Aff.AVar         (AVAR)
 import Control.Monad.Aff.Class        (class MonadAff)
-import Control.Monad.Eff.Now          (NOW, nowDateTime)
+import Control.Monad.Eff.Now          (NOW) --, nowDateTime)
 import Control.Monad.Jax.Class        (class MonadJax)
 import DOM                            (DOM)
 import DOM.Event.Event                (preventDefault)
@@ -32,6 +32,7 @@ import Network.HTTP.Affjax            (AJAX)
 import Pinboard.Config                (Config, Tag)
 import Pinboard.UI.Component.TagInput as TI
 import Pinboard.UI.Internal.HTML      as PH
+import Pinboard.UI.Internal.Popup     (closePopup)
 
 import Pinboard.API
   ( Error(..)
@@ -227,6 +228,9 @@ component =
       Recv (Tuple c _) k -> k <$ do
         H.modify (_{ config = c })
 
+        -- Reload details, perhaps with a different API token
+        _ <- eval (Init k)
+
         -- Don't change flags if bookmark was already saved
         whenM (H.gets (isNothing <<< _.time)) $
           H.modify (_{ readLater = c.defaults.readLater
@@ -247,8 +251,9 @@ component =
                     # postsAdd s.config.authToken s.url s.title
 
         unwrapResponse r \_ -> do
-          now <- map extract (H.liftEff nowDateTime)
-          H.modify (_{ status = Success "Saved", time = Just now })
+          H.liftEff closePopup
+          -- now <- map extract (H.liftEff nowDateTime)
+          -- H.modify (_{ status = Success "Saved", time = Just now })
 
       Delete e k -> k <$ do
         noBubble e
@@ -258,7 +263,8 @@ component =
         r <- H.lift $ postsDelete s.config.authToken s.url
 
         unwrapResponse r \_ -> do
-          H.modify (_{ status = Success "Deleted", time = Nothing })
+          H.liftEff closePopup
+          -- H.modify (_{ status = Success "Deleted", time = Nothing })
 
       OnUrl x k -> k <$ H.modify (_{ url = x })
       OnDesc x k -> k <$ H.modify (_{ desc = x })

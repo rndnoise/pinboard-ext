@@ -394,7 +394,15 @@ makeReq_
   -> String
   -> AffjaxRequest Unit
 makeReq_ (AuthToken auth) path =
-  defaultRequest { url = baseUrl <> path <> printQuery query }
+  defaultRequest
+  { url = baseUrl <> path <> printQuery query
+
+  -- Pinboard will send WWW-Authenticate response header if the auth_token
+  -- is blank, unless we send HTTP BasicAuth params. That header will make
+  -- Firefox display the ugly modal password prompt.
+  , username = if auth == "" then Just "null" else Nothing
+  , password = if auth == "" then Just "null" else Nothing
+  }
   where
     query =
       toQuery
@@ -411,7 +419,11 @@ makeReq
   -> q
   -> AffjaxRequest Unit
 makeReq (AuthToken auth) path params =
-  defaultRequest { url = baseUrl <> path <> printQuery query }
+  defaultRequest
+  { url = baseUrl <> path <> printQuery query
+  , username = if auth == "" then Just "null" else Nothing
+  , password = if auth == "" then Just "null" else Nothing
+  }
   where
     query =
       toQuery

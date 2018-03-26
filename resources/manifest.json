@@ -1,6 +1,6 @@
 {
   "name": "Pinboard",
-  "version": "1.0",
+  "version": "1.1",
   "description": "Browser extension for bookmarking pages on Pinboard (pinboard.in)",
   "homepage_url": "https://github.com/rndnoise/pinboard",
   "icons":{
@@ -21,10 +21,11 @@
       "64": "img/active/64.png",
       "128":"img/active/128.png",
       "256":"img/active/256.png"}},
-  "permissions": [
+  "permissions":[
     "https://pinboard.in/",
     "https://api.pinboard.in/",
     "tabs",
     "storage"],
-  "manifest_version": 2
+  "manifest_version": 2,
+  "applications":{"gecko":{"update_url":"https://randomnoi.se/pinboard/updates.json"}}
 }

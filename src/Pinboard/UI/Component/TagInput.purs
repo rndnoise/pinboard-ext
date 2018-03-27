@@ -208,6 +208,7 @@ component =
           H.modify (options (_{ visible = true, waitToShow = Nothing }))
 
       OnBlur e k -> k <$ do
+        H.modify chooseBuffer
         H.getHTMLElementRef (H.RefLabel "tags") >>= case _ of
           Nothing -> pure unit
           Just el -> H.liftEff (setClassName "" el)
@@ -220,7 +221,6 @@ component =
 
         H.modify (options (_{ waitToHide = Just w }))
         H.fork $ D.whenQuiet w do
-          H.modify (chooseBuffer s.config.parse)
           H.modify (options (_{ visible = false, options = [], waitToHide = Nothing }))
           H.raise =<< H.gets _.chosen
 
@@ -255,12 +255,12 @@ component =
                    | bufferIsBlank s -> pure unit
                    | otherwise       -> do
                      noBubble e
-                     H.modify (chooseBuffer s.config.parse)
+                     H.modify chooseBuffer
                      H.raise =<< H.gets _.chosen
 
           x | chooseKey x -> do
             noBubble e
-            H.modify (chooseBuffer s.config.parse)
+            H.modify chooseBuffer
             H.raise =<< H.gets _.chosen
 
           "Escape" -> do
@@ -329,11 +329,11 @@ chooseOption k s = case s.options.options !! k of
 
 
 -- | TODO
-chooseBuffer :: forall i m eff. (String -> i) -> State i m eff -> State i m eff
-chooseBuffer f s
+chooseBuffer :: forall i m eff. State i m eff -> State i m eff
+chooseBuffer s
   | s.buffer == "" = s
   | otherwise      =
-    s { chosen  = s.chosen `snoc` f s.buffer
+    s { chosen  = s.chosen `snoc` s.config.parse s.buffer
       , buffer  = ""
       , options = o { visible  = false
                     , options  = []

@@ -1,0 +1,6 @@
+{"addons":{"addon@example.com":{"updates":[
+ {"version": "1.0",
+  "update_link": "https://randomnoi.se/files/pinboard/pinboard-1.0-an+fx.xpi" ,
+  "update_hash":"sha256:f133d38809d7e487732d8aa5917ee2cb5668c96e68a5005712f8d24996eaeed0",
+  "strict_min_version":"59.0"}
+]}}}

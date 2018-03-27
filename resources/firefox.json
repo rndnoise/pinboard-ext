@@ -2,5 +2,9 @@
  {"version": "1.0",
   "update_link": "https://randomnoi.se/files/pinboard/pinboard-1.0-an+fx.xpi" ,
   "update_hash":"sha256:f133d38809d7e487732d8aa5917ee2cb5668c96e68a5005712f8d24996eaeed0",
+  "strict_min_version":"59.0"},
+ {"version": "1.1",
+  "update_link": "https://randomnoi.se/files/pinboard/pinboard-1.1-an+fx.xpi" ,
+  "update_hash":"sha256:c49d3c8bb915e36451720d078d10c4114fbbc737126d64a5b57584f0c1f536a1",
   "strict_min_version":"59.0"}
 ]}}}

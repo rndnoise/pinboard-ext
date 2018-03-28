@@ -104,19 +104,19 @@ component =
     render s =
       HH.div_
       [ HH.img
-          [ HP.src "img/single.svg"
+          [ HP.src "single.svg"
           , PH.classes [ toggle singleSlot, "single-icon" ]
           , HE.onClick (HE.input_ OnClickSingle)
           ]
 
       , HH.img
-          [ HP.src "img/multi.svg"
+          [ HP.src "multi.svg"
           , PH.classes [ toggle multiSlot, "multi-icon" ]
           , HE.onClick (HE.input_ OnClickMulti)
           ]
 
       , HH.img
-          [ HP.src "img/options.svg"
+          [ HP.src "options.svg"
           , PH.classes [ toggle optionsSlot, "options-icon" ]
           , HE.onClick (HE.input_ OnClickOptions)
           ]

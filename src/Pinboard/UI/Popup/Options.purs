@@ -97,6 +97,7 @@ component =
           [ HH.input
             [ PH.class_ "icon-key"
             , HP.type_ HP.InputText
+            , HP.placeholder "username:hexadecimal string"
             , HP.value (show s.config.authToken)
             , HP.spellcheck false
             , HP.autocomplete false

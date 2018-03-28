@@ -161,7 +161,7 @@ component =
 
         , HH.button
           [ PH.class_ "primary"
-          , HP.disabled (all (\x -> not x.chosen || x.status /= Idle) s.tabs)
+          , HP.disabled (not (enableSave s))
           , HE.onClick (HE.input Save)
           ]
           [ HH.text "Save" ]
@@ -279,6 +279,15 @@ updateTab tabIndex f s = case modifyAt tabIndex f s.tabs of
   Nothing -> s
   Just ts -> s { tabs = ts }
 
+
+enableSave :: forall m. State m -> Boolean
+enableSave s =
+  all (\x -> x.status /= Waiting) s.tabs &&
+  any (\x -> x.chosen && paused x.status) s.tabs
+  where
+    paused Idle      = true
+    paused (Error _) = true
+    paused _         = false
 
 noBubble
   :: forall e m

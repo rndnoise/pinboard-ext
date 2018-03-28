@@ -1,27 +1,33 @@
-#tags
+.tags
 { width: 100%;
-  border: 1px solid #ccc;
   overflow: hidden; }
 
-#tags.focus { }
+.tags:not(.focus)
+{ border: 1px solid #ccc; }
 
-#tags > div { overflow: hidden; }
+.tags input:focus
+{ border: none;
+  box-shadow: none; }
 
-#tags input
+.tags > div
+{ overflow: hidden; }
+
+.tags input
 { width: 100%;
   margin: 0;
   border: none;
   outline: none;
   display: inline-block;
+  padding-left: 0;
   font-size: 1rem; }
 
-#tags .matched { color: #000000; font-weight: bold; }
-#tags .unmatch { }
+.tags .matched { color: #000000; font-weight: bold; }
+.tags .unmatch { }
 
 ul.selected
 { float: left;
   margin: 0;
-  padding: 0.35rem 0 0 0.75rem;
+  padding: 0.35rem 4px 0 0;
   display: inline-block; }
 
 ul.selected li

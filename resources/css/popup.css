@@ -15,7 +15,7 @@ label.select { margin-bottom: 0.75rem; }
 
 button
 { float: right;
-  margin: 0 0 0 1rem; }
+  margin-left: 0.75rem; }
 
 .multi-icon,
 .single-icon,
@@ -60,13 +60,12 @@ div.status
 /* single ********************************************************************/
 
 #single .urgh
-{ padding: 0.5rem 1rem 1rem 1rem; }
+{ margin: 0.75rem 0.75rem 0rem 0.75rem; }
 
 /* multi *********************************************************************/
 
 #multi .upper
-{ width: 100%;
-  padding: 0.5rem 1rem 1rem 1rem;
+{ padding: 0.75rem 0.75rem 0 0.75rem;
   border-bottom: 1px solid #999; }
 
 #multi #tags { background-color: #fff; }
@@ -89,7 +88,8 @@ div.status
   background-color: #007bff; }
 
 #multi ul.tabs label
-{ padding: 8px 1rem 10px 1rem; }
+{ margin: 0;
+  padding: 8px 1rem 10px 1rem; }
 
 #multi ul.tabs input[type="checkbox"]
 { float: left;
@@ -116,6 +116,8 @@ div.status
 
 #multi input.title:focus
 { color: #000;
+  outline: none;
+  border: none;
   background-color: #fff; }
 
 #multi ul.tabs .url
@@ -132,4 +134,4 @@ div.status
   height: 32px; }
 
 #options .urgh
-{ margin: 0.5rem 1rem 1rem 1rem; }
+{ margin: 0.5rem 0.75rem 0.75rem 0.75rem; }

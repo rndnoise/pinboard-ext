@@ -17,7 +17,6 @@ import DOM                            (DOM)
 import DOM.Event.Event                (preventDefault)
 import DOM.Event.KeyboardEvent        (key, metaKey, shiftKey, altKey)
 import DOM.Event.Types                (KeyboardEvent, FocusEvent, keyboardEventToEvent)
-import DOM.HTML.HTMLElement           (setClassName)
 import Data.Array                     (find, null, snoc, init, mapWithIndex, (!!), deleteAt, length)
 import Data.Filterable                (maybeBool)
 import Data.Foldable                  (elem)
@@ -62,6 +61,9 @@ type Config i m =
 type State i m eff = -- TODO: don't care about eff
   { buffer  :: String
     -- ^ The value of the text input field
+
+  , focused :: Boolean
+    -- ^ Whether the input field has keyboard focus
 
   , chosen  :: Array i
     -- ^ The chosen items
@@ -132,6 +134,7 @@ component =
       { chosen
       , config
       , buffer:  ""
+      , focused: false
       , options: { visible:    false
                  , options:    []
                  , hoverIdx:   Nothing
@@ -141,7 +144,9 @@ component =
     render :: State i m eff -> HTML i m
     render s =
       HH.div
-      [ HP.id_ "tags" ]
+      [ PH.classes (join [ pure "tags"
+                         , pure "icon-tag"
+                         , "focus" <$ guard s.focused]) ]
       [ case s.chosen of
           [] -> HH.text ""
           xs -> HH.ul [ PH.class_ "selected" ]
@@ -152,7 +157,9 @@ component =
 
       , HH.div_
         [ HH.input
-          [ HP.placeholder ""
+          [ HP.placeholder case s.chosen of
+              [] -> "Comma-separated list of tags"
+              _  -> ""
           , HP.type_ HP.InputText
           , HP.value s.buffer
           , HP.autofocus true
@@ -208,10 +215,7 @@ component =
           H.modify (options (_{ visible = true, waitToShow = Nothing }))
 
       OnBlur e k -> k <$ do
-        H.modify chooseBuffer
-        H.getHTMLElementRef (H.RefLabel "tags") >>= case _ of
-          Nothing -> pure unit
-          Just el -> H.liftEff (setClassName "" el)
+        H.modify (chooseBuffer <<< _{ focused = false })
 
         -- Wait a tick for user to stop clicking before hiding suggestions
         s <- H.get
@@ -225,9 +229,7 @@ component =
           H.raise =<< H.gets _.chosen
 
       OnFocus e k -> k <$ do
-        H.getHTMLElementRef (H.RefLabel "tags") >>= case _ of
-          Nothing -> pure unit
-          Just el -> H.liftEff (setClassName "focus" el)
+        H.modify (_{ focused = true })
 
         -- If we were about to hide suggestions, don't
         o <- H.gets _.options

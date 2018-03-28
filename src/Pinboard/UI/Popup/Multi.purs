@@ -130,14 +130,6 @@ component =
       , HH.div
         [ PH.class_ "upper" ]
         [ HH.label
-          [ PH.class_ "select" ]
-          [ HH.text "Tags:"
-          , HH.slot TagSlot TI.component
-              (Tuple s.config.tags (map s.config.tags.parse s.tags))
-              (HE.input FromTagInput)
-          ]
-
-        , HH.label
           [ PH.class_ "checkbox" ]
           [ HH.input
             [ HP.type_ HP.InputCheckbox
@@ -173,6 +165,13 @@ component =
           , HE.onClick (HE.input Save)
           ]
           [ HH.text "Save" ]
+
+        , HH.label
+          [ PH.class_ "text" ]
+          [ HH.slot TagSlot TI.component
+              (Tuple s.config.tags (map s.config.tags.parse s.tags))
+              (HE.input FromTagInput)
+          ]
         ]
 
       , HH.ul
@@ -184,9 +183,9 @@ component =
                         _    -> "" ]
           [ HH.label_
             [ case tab.status of
-                Waiting -> HH.img [ PH.class_ "status", HP.src "img/three.svg" ]
-                Success -> HH.img [ PH.class_ "status", HP.src "img/bookmark.svg" ]
-                Error x -> HH.img [ PH.class_ "status", HP.src "img/issue.svg" ]
+                Waiting -> HH.img [ PH.class_ "status", HP.src "busy.svg" ]
+                Success -> HH.img [ PH.class_ "status", HP.src "bookmark.svg" ]
+                Error x -> HH.img [ PH.class_ "status", HP.src "error.svg" ]
                 Idle ->
                   HH.input
                   [ HP.type_ HP.InputCheckbox

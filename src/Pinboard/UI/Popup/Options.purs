@@ -83,19 +83,20 @@ component =
 
       , HH.div
         [ PH.class_ "urgh" ]
-        [ HH.label
+        [ HH.div
+          [ PH.class_ "message" ]
+          [ HH.text "See "
+          , HH.a
+            [ HP.target "_blank"
+            , HP.href "https://pinboard.in/settings/password" ]
+            [ HH.text "pinboard.in/settings" ]
+          , HH.text " to retrieve your API token"
+          ]
+        , HH.label
           [ PH.class_ "text" ]
-          [ HH.div
-            [ PH.class_ "message" ]
-            [ HH.text "See "
-            , HH.a
-              [ HP.target "_blank"
-              , HP.href "https://pinboard.in/settings/password" ]
-              [ HH.text "pinboard.in/settings" ]
-            , HH.text " to retrieve your API token"
-            ]
-          , HH.input
-            [ HP.type_ HP.InputText
+          [ HH.input
+            [ PH.class_ "icon-key"
+            , HP.type_ HP.InputText
             , HP.value (show s.config.authToken)
             , HP.spellcheck false
             , HP.autocomplete false

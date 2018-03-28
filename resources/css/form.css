@@ -24,15 +24,15 @@ button.secondary:disabled { background-color: #6c757d; border-color: #6c757d; }
 
 label
 { display: block;
+  position: relative;
   font-size: 0.85rem;
-  margin: 0 0 0.05rem 0; }
+  margin: 0.5rem 0 0.75rem 0; }
 
 label.radio,
 label.checkbox
 { cursor: pointer;
   font-size: 1rem;
-  margin: 0.3rem 1rem 0 0;
-  padding-left: 1.8rem; }
+  margin: 0.25rem 1rem 0 1.75rem; }
 
 label.text { }
 
@@ -40,19 +40,49 @@ label.select { }
 
 label.textarea { }
 
+.icon-tag
+{ background: url(tag.svg) no-repeat scroll 6px 6px;
+  background-size: 20px 20px;
+  padding-left: 32px; }
+
+.icon-url
+{ background: url(url.svg) no-repeat scroll 6px 6px;
+  background-size: 20px 20px;
+  padding-left: 32px; }
+
+.icon-key
+{ background: url(key.svg) no-repeat scroll 6px 6px;
+  background-size: 20px 20px;
+  padding-left: 32px; }
+
+.icon-title
+{ background: url(title.svg) no-repeat scroll 6px 6px;
+  background-size: 20px 20px;
+  padding-left: 32px; }
+
 input
-{ border-radius: 0.25rem;
-  border: 1px solid #ccc;
+{ border: 1px solid #ccc;
   display: inline-block;
   font-size: 1rem;
-  margin: 0 0 0.75rem 0;
   padding: 0.45rem 0.75rem 0.55rem 0.75rem;
   vertical-align: middle;
   width: 100%;
   color: inherit;
-  outline: none;
+  /*outline: none;*/
   background-color: inherit;
   box-sizing: border-box; }
+
+.focus,
+input:focus,
+textarea:focus
+{ border: 1px solid #9ecaed;
+  outline: #9ecaed solid 3px;
+  box-shadow: 0 0 10px #9ecaed;
+}
+
+input[type="radio"]:focus,
+input[type="checkbox"]:focus
+{ outline: none; border: none; }
 
 input[type="radio"]
 { margin: -2px 0.4rem 0 -1.5rem;
@@ -71,12 +101,11 @@ input[type="checkbox"]
   -webkit-transform: scale(1.25); }
 
 textarea
-{ border-radius: 0.25rem;
-  border: 1px solid #ccc;
+{ border: 1px solid #ccc;
   display: block;
   font-size: 1rem;
   font-family: inherit;
-  height: 4.5rem;
+  height: 6rem;
   line-height: 1.25rem;
   margin: 0 0 0.75rem 0;
   padding: 0.45rem 0.75rem 0.55rem 0.75rem;
@@ -97,8 +126,8 @@ button
   cursor: pointer;
   display: inline-block;
   font-size: 1rem;
-  margin: 0;
-  padding: 5px 12px 6px 12px;
+  margin: 0 0 0.76rem 0;
+  padding: 4px 12px 5px 12px;
   text-align: center;
   user-select: none;
   vertical-align: bottom;

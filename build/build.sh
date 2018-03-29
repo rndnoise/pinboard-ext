@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-OUT=build/dist-srcs
+OUT=build/srcs
 
 bower install
 

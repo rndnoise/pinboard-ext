@@ -7,6 +7,6 @@
 /.psc*
 /.purs*
 /.psa*
-/build/dist-srcs
-/build/dist-zips
+/build/srcs
+/build/zips
 /build/opera.pem

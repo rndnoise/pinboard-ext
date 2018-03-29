@@ -1,6 +1,5 @@
 #!/bin/sh
 set -e
-set -x
 
 read -d '' JQ << EOF || true
 .addons[].updates[0] | . |=
@@ -13,7 +12,7 @@ EOF
 DIR=$(dirname $0)
 OUT=$(mktemp)
 
-for FILEPATH in $(ls $DIR/dist-zips/*xpi); do
+for FILEPATH in $(ls $DIR/zips/*xpi); do
   BASENAME=$(basename $FILEPATH)
   VERSION=$(echo $BASENAME | perl -ne '/([\d.]+)/; print $1')
   SHA256=$(openssl dgst -sha256 $FILEPATH | cut -d' ' -f2)

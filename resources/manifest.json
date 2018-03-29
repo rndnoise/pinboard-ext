@@ -1,31 +1,39 @@
 {
   "name": "Pinboard",
-  "version": "1.1",
+  "version": "1.2",
   "description": "Browser extension for bookmarking pages on Pinboard (pinboard.in)",
   "homepage_url": "https://randomnoi.se/pinboard",
-  "icons":{
-    "16": "img/blue/16.png",
-    "24": "img/blue/24.png",
-    "32": "img/blue/32.png",
-    "64": "img/blue/64.png",
-    "128":"img/blue/128.png",
-    "256":"img/blue/256.png"},
-  "browser_action":{
+  "icons": {
+    "16": "blue/16.png",
+    "24": "blue/24.png",
+    "32": "blue/32.png",
+    "64": "blue/64.png",
+    "128": "blue/128.png",
+    "256": "blue/256.png"
+  },
+  "browser_action": {
     "browser_style": true,
     "default_title": "Pinboard",
     "default_popup": "popup.html",
-    "default_icon":{
-      "16": "img/blue/16.png",
-      "24": "img/blue/24.png",
-      "32": "img/blue/32.png",
-      "64": "img/blue/64.png",
-      "128":"img/blue/128.png",
-      "256":"img/blue/256.png"}},
-  "permissions":[
+    "default_icon": {
+      "16": "blue/16.png",
+      "24": "blue/24.png",
+      "32": "blue/32.png",
+      "64": "blue/64.png",
+      "128": "blue/128.png",
+      "256": "blue/256.png"
+    }
+  },
+  "permissions": [
     "https://pinboard.in/",
     "https://api.pinboard.in/",
     "tabs",
-    "storage"],
+    "storage"
+  ],
   "manifest_version": 2,
-  "applications":{"gecko":{"update_url":"https://randomnoi.se/files/pinboard/firefox.json"}}
+  "applications": {
+    "gecko": {
+      "update_url": "https://randomnoi.se/files/pinboard/firefox.json"
+    }
+  }
 }

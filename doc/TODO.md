@@ -6,6 +6,7 @@ safari?
 
 ## bugs
 
+- clicking suggestions chooses buffer, not clicked item -- focus issue??
 - when permissions wrong, ajax exception bubbles to top(!!)
 - prevent concurrent writes
 - don't save if nothing has changed

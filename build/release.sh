@@ -1,6 +1,9 @@
 #!/bin/sh
 set -e
 
+BOLD=$(tput bold)
+NORM=$(tput sgr0)
+
 abort() {
   echo $1 >&2
   exit 1
@@ -11,29 +14,30 @@ abort() {
 
 VERSION=$1
 
+if git rev-parse "$VERSION" >/dev/null 2>&1; then
+  abort "tag already exists"
+fi
+
 mkdir -p $(basename $0)/srcs
+mkdir -p $(basename $0)/zips
 
-x=$(git status --porcelain) && [ -z "$x" ] \
-  || abort "unstaged changes!"
+X=$(git status --porcelain) && [ -z "$X" ]  || abort "aborting due to unstaged changes"
+$(dirname $0)/build.sh                      || abort "build failed"
 
-$(dirname $0)/build.sh \
-  || abort "build failed"
-
-# check that each icon exists
-for x in $(jq -r ".icons | .[]" < resources/manifest.json); do
-  [ ! -f dist/$x ] || abort "icon doesn't exist: $x"
+echo "${BOLD}validating manifest.json${NORM}"
+for X in $(jq -r ".icons | .[]" < resources/manifest.json); do
+  [ -f build/srcs/$X ] || abort "icon doesn't exist: $X"
+done
+for X in $(jq -r ".browser_action | .default_icon | .[]" < resources/manifest.json); do
+  [ -f build/srcs/$X ] || abort "icon doesn't exist: $X"
 done
 
-# check that each icon exists
-for x in $(jq -r ".browser_action | .default_icon | .[]" < resources/manifest.json); do
-  [ ! -f dist/$x ] || abort "icon doesn't exist: $x"
-done
-
-echo "setting version in resources/manifest.json"
-jq ".version = "'"'$VERSION'"' < resources/manifest.json > resources/manifest.json_
+echo "${BOLD}updating manifest.json${NORM}"
+jq ".version = "'"'${VERSION}'"' < resources/manifest.json > resources/manifest.json_
 mv resources/manifest.json_ resources/manifest.json
 cp resources/manifest.json $(dirname $0)/srcs
 
+echo "${BOLD}signing firefox package${NORM}"
 web-ext sign \
   --api-key="user:13897535:719" \
   --api-secret="8ad53a40955965b21520b13c81dbea1d7b6b533f053f56ee6b8d0ceb4d2d506c" \
@@ -41,16 +45,24 @@ web-ext sign \
   --source-dir $(dirname $0)/srcs \
   --artifacts-dir $(dirname $0)/zips
 
-git add resources/manifest.json
-git commit -m "release v$VERSION"
-git tag $VERSION
+echo "${BOLD}tagging release${NORM}"
+git add resources/manifest.json     >/dev/null
+git commit -m "release v${VERSION}" >/dev/null
+git tag ${VERSION}                  >/dev/null
 
-echo "copying .xpi firefox packages to website"
+echo "${BOLD}copying .xpi firefox packages to website${NORM}"
 OUT=~/wd/write/randomnoi.se/resources/files/pinboard
+cp $(dirname $0)/zips/*xpi ${OUT}
 
-$(dirname $0)/firefox-updates.sh > $OUT/firefox.json
-cp $(dirname $0)/zips/*xpi $OUT
+echo "${BOLD}updating firefox.json${NORM}"
+$(dirname $0)/firefox-updates.sh > ${OUT}/firefox.json
+ln -sf ${OUT}/*${VERSION}[^0-9.]*.xpi ${OUT}/pinboard-current.xpi
 
-echo "don't forget"
+echo "packaging ${BOLD}build/zips/pinboard-$VERSION.zip${NORM}"
+zip -j $(dirname $0)/zips/pinboard-${VERSION}.zip $(dirname $0)/srcs/*
+
+echo
+echo "${BOLD}don't forget${NORM}"
 echo "  https://addons.opera.com/developer/upload/"
 echo "  https://chrome.google.com/webstore/developer/dashboard"
+echo "  deploy randomnoi.se"

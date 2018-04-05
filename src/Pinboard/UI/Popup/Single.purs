@@ -241,6 +241,7 @@ component =
         noBubble e
         H.modify (_{ status = Info "Saving..." })
 
+        _ <- H.query TagSlot (H.action TI.DoBlur)
         s <- H.get
         r <- H.lift $ addOptions
                     { extended  = Just s.desc

@@ -89,7 +89,9 @@ type Options i eff = -- TODO: don't care about eff
 
 data Query i m k
   = Recv (Input i m) k
-    -- ^ The parent component provides an updated `Input`
+    -- ^ The parent component provides an updated `Input`; could have
+    --   different selected items or a new `suggest` function due to
+    --   updated dictionary of known words.
 
   | OnKey KeyboardEvent k
     -- ^ Key was pressed in the text buffer
@@ -97,8 +99,14 @@ data Query i m k
   | OnBlur FocusEvent k
     -- ^ The text entry lost focus
 
+  | DoBlur k
+    -- ^ Wait has expired, act on blur event
+
   | OnInput String k
     -- ^ The text buffer changed
+
+  | DoInput k
+    -- ^ Wait has expired, act on input event
 
   | OnFocus FocusEvent k
     -- ^ The text entry gained focus
@@ -205,28 +213,41 @@ component =
                Nothing -> D.create   s.config.showDelay
                Just _w -> D.reset _w s.config.showDelay
 
-        H.modify (_{ buffer = v })
-        H.modify (options (_{ waitToShow = Just w }))
+        H.modify (_{ buffer     = v      } <<<
+         options (_{ waitToShow = Just w }))
 
+        -- This wait prevents issuing rapid-fire requests to complete the
+        -- current value (which might not finish before the next keypress)
         H.fork $ D.whenQuiet w do
-          s <- H.get
-          o <- H.lift (s.config.suggest s.chosen s.buffer)
-          H.modify (updateSuggestions o)
-          H.modify (options (_{ visible = true, waitToShow = Nothing }))
+          eval (DoInput k)
+
+      DoInput k -> k <$ do
+        s <- H.get
+        o <- H.lift (s.config.suggest s.chosen s.buffer)
+        H.modify (updateSuggestions o <<<
+         options (_{ visible = true, waitToShow = Nothing }))
 
       OnBlur e k -> k <$ do
-        H.modify (chooseBuffer <<< _{ focused = false })
-
         -- Wait a tick for user to stop clicking before hiding suggestions
         s <- H.get
         w <- case s.options.waitToHide of
                Nothing -> D.create   s.config.hideDelay
                Just _w -> D.reset _w s.config.hideDelay
 
-        H.modify (options (_{ waitToHide = Just w }))
+        H.modify (_{ focused    = false  } <<<
+         options (_{ waitToHide = Just w }))
+
+        -- If user clicked a suggestion (`Choose n`), this delay ensures that the
+        -- half-entered buffer text isn't chosen instead of the clicked suggestion
         H.fork $ D.whenQuiet w do
-          H.modify (options (_{ visible = false, options = [], waitToHide = Nothing }))
-          H.raise =<< H.gets _.chosen
+          eval (DoBlur k)
+
+      DoBlur k -> k <$ do
+        H.modify (chooseBuffer <<<
+         options (_{ visible    = false
+                   , options    = []
+                   , waitToHide = Nothing }))
+        H.raise =<< H.gets _.chosen
 
       OnFocus e k -> k <$ do
         H.modify (_{ focused = true })
@@ -236,6 +257,7 @@ component =
         _ <- case o.waitToHide of
                Nothing -> pure unit
                Just w  -> D.cancel w
+
         H.modify (options (_{ waitToHide = Nothing }))
 
       OnKey e k -> k <$ do

@@ -6,13 +6,11 @@ safari?
 
 ## bugs
 
-- clicking suggestions chooses buffer, not clicked item -- focus issue??
 - when permissions wrong, ajax exception bubbles to top(!!)
-- prevent concurrent writes
+- prevent concurrent writes (rapid click Save)
 - don't save if nothing has changed
 - multi status text moves on save (firefox)
 - recheck when url changes on single tab
-- when tag buffer focused, clicking save does not first 'chooseBuffer'
 
 ## search
 
@@ -52,6 +50,8 @@ safari?
 
 ## completed
 
+- when tag buffer focused, clicking save does not first 'chooseBuffer'
+- clicking suggestions chooses buffer, not clicked item -- focus issue??
 - move 'save' buttons to top of popup window
 - close popup after saved
 - focus tag input on open

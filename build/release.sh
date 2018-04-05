@@ -9,14 +9,18 @@ abort() {
   exit 1
 }
 
-[ $# -eq 1 ] \
-  || abort "usage: $0 <VERSION>"
+[ $# -eq 1 ] || abort "usage: $0 <VERSION>"
 
 VERSION=$1
 
-if git rev-parse "$VERSION" >/dev/null 2>&1; then
-  abort "tag already exists"
-fi
+command -v git      >/dev/null 2>&1 || abort "git not in $PATH"
+command -v jq       >/dev/null 2>&1 || abort "jq not in $PATH"
+command -v web-ext  >/dev/null 2>&1 || abort "web-ext not in $PATH"
+command -v zip      >/dev/null 2>&1 || abort "zip not in $PATH"
+command -v openssl  >/dev/null 2>&1 || abort "openssl not in $PATH"
+
+git rev-parse "$VERSION" >/dev/null 2>&1 \
+  && abort "tag already exists"
 
 mkdir -p $(basename $0)/srcs
 mkdir -p $(basename $0)/zips

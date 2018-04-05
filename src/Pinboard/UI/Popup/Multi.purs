@@ -248,6 +248,7 @@ component =
 
       Save e k -> k <$ do
         noBubble e
+        _ <- H.query TagSlot (H.action TI.DoBlur)
         s <- H.get
 
         forWithIndex s.tabs \n tab ->

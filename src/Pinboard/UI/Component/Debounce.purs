@@ -68,12 +68,12 @@ reset db ms = cancel db *> create ms
 -- | amount of time. Only one thread of execution will proceed;
 -- | any other threads will starve.
 whenQuiet
-  :: forall m eff
+  :: forall m eff a
    . MonadAff (avar :: AVAR | eff) m
   => Debouncer eff
-  -> m Unit
+  -> m a
   -> m Unit
 whenQuiet (Debouncer { var }) action = unit <$ do
   liftAff (attempt (takeVar var)) >>= case _ of
-    Right _ -> action
+    Right _ -> action $> unit
     _       -> pure unit

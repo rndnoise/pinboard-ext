@@ -55,12 +55,12 @@ git commit -m "release v${VERSION}" >/dev/null
 git tag ${VERSION}                  >/dev/null
 
 echo "${BOLD}copying .xpi firefox packages to website${NORM}"
-OUT=~/wd/write/randomnoi.se/resources/files/pinboard
+OUT=~/wd/write/randomnoi.se/assets/files/pinboard
 cp $(dirname $0)/zips/*xpi ${OUT}
 
 echo "${BOLD}updating firefox.json${NORM}"
 $(dirname $0)/firefox-updates.sh > ${OUT}/firefox.json
-ln -sf ${OUT}/*${VERSION}[^0-9.]*.xpi ${OUT}/pinboard-current.xpi
+ln -sf $(basename ${OUT}/*${VERSION}[^0-9.]*.xpi) ${OUT}/pinboard-current.xpi
 
 echo "packaging ${BOLD}build/zips/pinboard-$VERSION.zip${NORM}"
 zip -j $(dirname $0)/zips/pinboard-${VERSION}.zip $(dirname $0)/srcs/*

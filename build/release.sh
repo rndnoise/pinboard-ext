@@ -63,7 +63,7 @@ $(dirname $0)/firefox-updates.sh > ${OUT}/firefox.json
 ln -sf $(basename ${OUT}/*${VERSION}[^0-9.]*.xpi) ${OUT}/pinboard-current.xpi
 
 echo "packaging ${BOLD}build/zips/pinboard-$VERSION.zip${NORM}"
-zip -j $(dirname $0)/zips/pinboard-${VERSION}.zip $(dirname $0)/srcs/*
+zip -j $(dirname $0)/zips/pinboard-${VERSION}.zip $(dirname $0)/srcs/* $(dirname $0)/srcs/*/*
 
 echo
 echo "${BOLD}don't forget${NORM}"

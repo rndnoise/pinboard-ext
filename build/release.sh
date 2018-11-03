@@ -64,7 +64,7 @@ ln -sf $(basename ${OUT}/*${VERSION}[^0-9.]*.xpi) ${OUT}/pinboard-current.xpi
 
 echo "packaging ${BOLD}build/zips/pinboard-$VERSION.zip${NORM}"
 pushd $(dirname $0)/srcs
-zip ../pinboard-${VERSION}.zip * */*
+zip ../zips/pinboard-${VERSION}.zip * */*
 popd
 
 echo

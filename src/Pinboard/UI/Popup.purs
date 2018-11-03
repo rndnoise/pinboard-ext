@@ -5,7 +5,8 @@ module Pinboard.UI.Popup
 import Prelude
 import Chrome.FFI                     (CHROME)
 import Chrome.Tabs                    (Tab, query, queryOptions) as CT
-import Chrome.Tabs.Tab                (active) as CT
+import Chrome.Tabs.Events             (onRemoved) as CT
+import Chrome.Tabs.Tab                (active, id, windowId) as CT
 import Control.Monad.Aff.Class        (class MonadAff)
 import Control.Monad.Eff              (Eff)
 import Control.Monad.Eff.Now          (NOW)
@@ -26,6 +27,7 @@ import Halogen.VDom.Driver            as HV
 import Network.HTTP.Affjax            (AJAX)
 import Pinboard.Config                (Config, loadConfig)
 import Pinboard.UI.Internal.HTML      as PH
+import Pinboard.UI.Internal.Popup     (closePopup)
 import Pinboard.UI.Popup.Multi        as PM
 import Pinboard.UI.Popup.Options      as PO
 import Pinboard.UI.Popup.Single       as PS
@@ -38,6 +40,13 @@ main = HA.runHalogenAff do
   tabs <- CT.query (CT.queryOptions { currentWindow = Just true })
   body <- HA.awaitBody
   _    <- HV.runUI component (Tuple conf tabs) body
+
+  -- Close the popup if the active tab is closed
+  H.liftEff $ CT.onRemoved $ \tabId info -> do
+    case find CT.active tabs of
+      Just t | CT.windowId t == info.windowId
+            && CT.id t == Just tabId -> closePopup
+      _                              -> pure unit
 
   pure unit
 

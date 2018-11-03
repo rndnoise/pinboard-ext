@@ -15,8 +15,8 @@ import Control.Monad.Aff.Class        (class MonadAff)
 import Control.Monad.Eff.Now          (NOW) --, nowDateTime)
 import Control.Monad.Jax.Class        (class MonadJax)
 import DOM                            (DOM)
-import DOM.Event.Event                (preventDefault)
-import DOM.Event.Types                (MouseEvent, mouseEventToEvent)
+import DOM.Event.Event                (Event, preventDefault)
+import DOM.Event.Types                (mouseEventToEvent)
 import Data.Array                     (uncons)
 import Data.DateTime                  (DateTime)
 import Data.Either                    (Either(..), either)
@@ -68,8 +68,8 @@ data Query m k
   | OnDesc String k
   | OnReadLater Boolean k
   | OnPrivate Boolean k
-  | Save MouseEvent k
-  | Delete MouseEvent k
+  | Save Event k
+  | Delete Event k
   | FromTagInput (TI.Output Tag) k
 
 type Input m = Tuple (Config m) (Maybe CT.Tab)
@@ -122,6 +122,51 @@ component =
       , HH.div
         [ PH.class_ "urgh" ] $
         [ HH.label
+          [ PH.class_ "text" ]
+          [ HH.slot TagSlot TI.component
+              (Tuple s.config.tags (map s.config.tags.parse s.tags))
+              (HE.input FromTagInput)
+          ]
+
+        , HH.label
+          [ PH.class_ "textarea" ]
+          [ HH.text "Description:"
+          , HH.textarea
+            [ HP.value s.desc
+            , HP.required false
+            , HP.spellcheck true
+            , HE.onValueInput (HE.input OnDesc)
+            ]
+          ]
+
+        , HH.label
+          [ PH.class_ "text" ]
+          [ HH.input
+            [ PH.class_ "icon-title"
+            , HP.type_ HP.InputText
+            , HP.value s.title
+            , HP.required true
+            , HP.spellcheck false
+            , HP.autocomplete false
+            , HE.onValueInput (HE.input OnTitle)
+            ]
+          ]
+
+        , HH.label
+          [ PH.class_ "text" ]
+          [ HH.input
+            [ PH.class_ "icon-url"
+            , HP.type_ HP.InputUrl
+            , HP.value s.url
+            , HP.required true
+            , HP.spellcheck false
+            , HP.autocomplete false
+            , HE.onValueInput (HE.input OnUrl)
+            ]
+          ]
+        ]
+        <>
+        [ HH.label
           [ PH.class_ "checkbox" ]
           [ HH.input
             [ HP.type_ HP.InputCheckbox
@@ -144,62 +189,17 @@ component =
         <>
         [ HH.button
           [ PH.class_ "primary"
-          , HE.onClick (HE.input Save)
+          , HE.onClick (HE.input (Save <<< mouseEventToEvent))
           ]
           [ HH.text "Save" ]
         ]
         <>
        ([ HH.button
           [ PH.class_ "danger"
-          , HE.onClick (HE.input Delete)
+          , HE.onClick (HE.input (Delete <<< mouseEventToEvent))
           ]
           [ HH.text "Delete" ]
         ] # guard (isJust s.time))
-        <>
-        [ HH.label
-          [ PH.class_ "text" ]
-          [ HH.input
-            [ PH.class_ "icon-url"
-            , HP.type_ HP.InputUrl
-            , HP.value s.url
-            , HP.required true
-            , HP.spellcheck false
-            , HP.autocomplete false
-            , HE.onValueInput (HE.input OnUrl)
-            ]
-          ]
-
-        , HH.label
-          [ PH.class_ "text" ]
-          [ HH.input
-            [ PH.class_ "icon-title"
-            , HP.type_ HP.InputText
-            , HP.value s.title
-            , HP.required true
-            , HP.spellcheck false
-            , HP.autocomplete false
-            , HE.onValueInput (HE.input OnTitle)
-            ]
-          ]
-
-        , HH.label
-          [ PH.class_ "text" ]
-          [ HH.slot TagSlot TI.component
-              (Tuple s.config.tags (map s.config.tags.parse s.tags))
-              (HE.input FromTagInput)
-          ]
-
-        , HH.label
-          [ PH.class_ "textarea" ]
-          [ HH.text "Description:"
-          , HH.textarea
-            [ HP.value s.desc
-            , HP.required false
-            , HP.spellcheck true
-            , HE.onValueInput (HE.input OnDesc)
-            ]
-          ]
-        ]
       ]
 
     eval :: Query m ~> DSL m
@@ -295,6 +295,6 @@ unwrapResponse (Left e) _ =
 noBubble
   :: forall e m
    . MonadAff (dom :: DOM | e) m
-  => MouseEvent
+  => Event
   -> DSL m Unit
-noBubble = H.liftEff <<< preventDefault <<< mouseEventToEvent
+noBubble = H.liftEff <<< preventDefault

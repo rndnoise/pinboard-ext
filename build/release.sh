@@ -22,8 +22,8 @@ command -v openssl  >/dev/null 2>&1 || abort "openssl not in $PATH"
 git rev-parse "$VERSION" >/dev/null 2>&1 \
   && abort "tag already exists"
 
-mkdir -p $(basename $0)/srcs
-mkdir -p $(basename $0)/zips
+mkdir -p $(dirname $0)/srcs
+mkdir -p $(dirname $0)/zips
 
 X=$(git status --porcelain) && [ -z "$X" ]  || abort "aborting due to unstaged changes"
 $(dirname $0)/build.sh                      || abort "build failed"
@@ -70,5 +70,6 @@ popd
 echo
 echo "${BOLD}don't forget${NORM}"
 echo "  https://addons.opera.com/developer/upload/"
-echo "  https://chrome.google.com/webstore/developer/dashboard"
+#cho "  https://chrome.google.com/webstore/developer/dashboard [yvmu3wxkukwtk2]"
+echo "  https://chrome.google.com/webstore/devconsole [yvmu3wxkukwtk2@gmail.com]"
 echo "  deploy randomnoi.se"

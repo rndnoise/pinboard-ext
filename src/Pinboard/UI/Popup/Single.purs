@@ -2,7 +2,7 @@ module Pinboard.UI.Popup.Single
   ( component
   , Input
   , Output
-  , Query
+  , Query(OnBlur, OnFocus)
   , State
   , Status
   ) where
@@ -63,6 +63,8 @@ data Status
 data Query m k
   = Init k
   | Recv (Input m) k
+  | OnBlur k
+  | OnFocus k
   | OnUrl String k
   | OnTitle String k
   | OnDesc String k
@@ -241,7 +243,7 @@ component =
         noBubble e
         H.modify (_{ status = Info "Saving..." })
 
-        _ <- H.query TagSlot (H.action TI.DoBlur)
+        _ <- H.query TagSlot (H.action TI.Blur)
         s <- H.get
         r <- H.lift $ addOptions
                     { extended  = Just s.desc
@@ -267,6 +269,8 @@ component =
           H.liftEff closePopup
           -- H.modify (_{ status = Success "Deleted", time = Nothing })
 
+      OnBlur k -> pure k
+      OnFocus k -> k <$ H.query TagSlot (H.action TI.Focus)
       OnUrl x k -> k <$ H.modify (_{ url = x })
       OnDesc x k -> k <$ H.modify (_{ desc = x })
       OnTitle x k -> k <$ H.modify (_{ title = x })

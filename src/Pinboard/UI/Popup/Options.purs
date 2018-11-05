@@ -2,7 +2,7 @@ module Pinboard.UI.Popup.Options
   ( component
   , Input
   , Output
-  , Query
+  , Query(OnBlur, OnFocus)
   , State
   , Status
   ) where
@@ -15,6 +15,9 @@ import Control.Monad.Jax.Class        (class MonadJax)
 import Data.Either                    (Either(..))
 import Data.Maybe                     (Maybe(..))
 import Data.Time.Duration             (Milliseconds(..))
+import Data.Foldable                  (traverse_)
+import DOM                            (DOM)
+import DOM.HTML.HTMLElement           (focus) as DOM
 import Halogen                        as H
 import Halogen.HTML                   as HH
 import Halogen.HTML.Events            as HE
@@ -29,7 +32,9 @@ import Pinboard.UI.Internal.HTML      as PH
 -------------------------------------------------------------------------------
 
 data Query k
-  = OnToRead Boolean k
+  = OnBlur k
+  | OnFocus k
+  | OnToRead Boolean k
   | OnPrivate Boolean k
   | OnReplace Boolean k
   | OnAuthToken String k
@@ -37,7 +42,7 @@ data Query k
 type State m eff =
   { config   :: Config m
   , status   :: Status
-  , waitAuth :: Maybe (Debouncer (ajax :: AJAX, chrome :: CHROME | eff)) }
+  , waitAuth :: Maybe (Debouncer (ajax :: AJAX, chrome :: CHROME, dom :: DOM | eff)) }
 
 data Status
   = Info String
@@ -54,7 +59,7 @@ type DSL m eff = H.ComponentDSL (State m eff) Query (Output m) m
 
 component
   :: forall eff m
-   . MonadAff (ajax :: AJAX, avar :: AVAR, chrome :: CHROME | eff) m
+   . MonadAff (ajax :: AJAX, avar :: AVAR, chrome :: CHROME, dom :: DOM | eff) m
   => MonadJax m
   => H.Component HH.HTML Query (Input m) (Output m) m
 component =
@@ -96,6 +101,7 @@ component =
           [ PH.class_ "text" ]
           [ HH.input
             [ PH.class_ "icon-key"
+            , HP.ref (H.RefLabel "token")
             , HP.type_ HP.InputText
             , HP.placeholder "username:hexadecimal string"
             , HP.value (show s.config.authToken)
@@ -145,6 +151,12 @@ component =
 
     eval :: Query ~> DSL m eff
     eval q = case q of
+      OnBlur k -> pure k
+
+      OnFocus k -> k <$ do
+        input <- H.getHTMLElementRef (H.RefLabel "token")
+        H.liftEff $ traverse_ DOM.focus input
+
       OnToRead value k -> k <$ do
         H.modify (defaults (_{ readLater = value }))
         c <- H.gets _.config

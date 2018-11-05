@@ -2,7 +2,7 @@ module Pinboard.UI.Popup.Multi
   ( component
   , Input
   , Output
-  , Query
+  , Query(OnBlur, OnFocus)
   , State
   , Status
   , Tab
@@ -62,6 +62,8 @@ derive instance eqStatus :: Eq Status
 data Query m k
   = Save MouseEvent k
   | Recv (Input m) k
+  | OnBlur k
+  | OnFocus k
   | OnTitle Int String k
   | OnCheck Int Boolean k
   | OnReadLater Boolean k
@@ -227,6 +229,11 @@ component =
                           , private   = c.defaults.private
                           , replace   = c.defaults.replace })
 
+      OnBlur k -> pure k
+
+      OnFocus k -> k <$ do
+        H.query TagSlot (H.action TI.Focus)
+
       OnTitle n value k -> k <$ do
         H.modify (updateTab n (_{ title = value }))
 
@@ -248,7 +255,7 @@ component =
 
       Save e k -> k <$ do
         noBubble e
-        _ <- H.query TagSlot (H.action TI.DoBlur)
+        _ <- H.query TagSlot (H.action TI.Blur)
         s <- H.get
 
         forWithIndex s.tabs \n tab ->

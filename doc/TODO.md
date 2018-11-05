@@ -6,8 +6,7 @@ safari?
 
 ## bugs
 
-- should be able to save by open popup, press [Enter]
-- paste closes popup in Chrome
+- paste closes popup in Chrome?
 - when manifest permissions wrong, ajax exception bubbles to top(!!)
 - prevent concurrent writes (rapid click Save)
 - don't save if nothing has changed
@@ -57,11 +56,13 @@ safari?
 
 ## completed
 
+- save by only open popup, press [Enter]
+- focus tag input on open
+- left/right arrow keys don't work in text entry for tags
 - when tag buffer focused, clicking save does not first 'chooseBuffer'
 - clicking suggestions chooses buffer, not clicked item -- focus issue??
 - move 'save' buttons to top of popup window
 - close popup after saved
-- focus tag input on open
 - configuration
   - user token
   - download tag set

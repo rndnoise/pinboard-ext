@@ -17,9 +17,10 @@ import DOM                            (DOM)
 import DOM.Event.Event                (preventDefault)
 import DOM.Event.KeyboardEvent        (key, metaKey, shiftKey, altKey)
 import DOM.Event.Types                (KeyboardEvent, FocusEvent, keyboardEventToEvent)
+import DOM.HTML.HTMLElement           (focus) as DOM
 import Data.Array                     (find, null, snoc, init, mapWithIndex, (!!), deleteAt, length)
 import Data.Filterable                (maybeBool)
-import Data.Foldable                  (elem)
+import Data.Foldable                  (elem, traverse_)
 import Data.Maybe                     (Maybe(..), fromMaybe)
 import Data.Time.Duration             (Milliseconds)
 import Data.Tuple                     (Tuple(..), fst, snd)
@@ -93,13 +94,16 @@ data Query i m k
     --   different selected items or a new `suggest` function due to
     --   updated dictionary of known words.
 
+  | Focus k
+    -- ^ The parent component asks this component to take input focus
+
   | OnKey KeyboardEvent k
     -- ^ Key was pressed in the text buffer
 
   | OnBlur FocusEvent k
     -- ^ The text entry lost focus
 
-  | DoBlur k
+  | Blur k
     -- ^ Wait has expired, act on blur event
 
   | OnInput String k
@@ -168,9 +172,9 @@ component =
           [ HP.placeholder case s.chosen of
               [] -> "Comma-separated list of tags"
               _  -> ""
+          , HP.ref (H.RefLabel "tags-text")
           , HP.type_ HP.InputText
           , HP.value s.buffer
-          , HP.autofocus true
           , HP.autocomplete false
           , HP.spellcheck false
           , HE.onBlur (HE.input OnBlur)
@@ -197,6 +201,10 @@ component =
     eval q = case q of
       Recv (Tuple c x) k -> k <$ do
         H.modify (_{ chosen = x, config = c })
+
+      Focus k -> k <$ do
+        input <- H.getHTMLElementRef (H.RefLabel "tags-text")
+        H.liftEff $ traverse_ DOM.focus input
 
       Reject n k -> k <$ do
         H.modify (rejectChosen n)
@@ -240,9 +248,9 @@ component =
         -- If user clicked a suggestion (`Choose n`), this delay ensures that the
         -- half-entered buffer text isn't chosen instead of the clicked suggestion
         H.fork $ D.whenQuiet w do
-          eval (DoBlur k)
+          eval (Blur k)
 
-      DoBlur k -> k <$ do
+      Blur k -> k <$ do
         H.modify (chooseBuffer <<<
          options (_{ visible    = false
                    , options    = []
@@ -263,13 +271,14 @@ component =
       OnKey e k -> k <$ do
         s <- H.get
         case key e of
-          "Backspace"
+          "Backspace" -- clear all tags OR remove last item
             | metaKey e -> H.modify resetState
             | otherwise -> when (bufferIsBlank s) $ do
+                             noBubble e
                              H.modify rejectLast
                              H.raise =<< H.gets _.chosen
 
-          "Enter" -> do
+          "Enter" -> do -- select current match OR use buffer text if no match is selected
             case s.options.hoverIdx of
                  Just n -> do
                    noBubble e
@@ -291,24 +300,28 @@ component =
             noBubble e
             H.modify clearBuffer
 
-          "Tab"
+          "Tab" -- cycle through matches
             | not (bufferIsBlank s) -> do
                 noBubble e
                 if shiftKey e
                   then H.modify highlightPrev
                   else H.modify highlightNext
 
-          "ArrowLeft"
-            | not shiftKey e &&
-              not metaKey e &&
-              not altKey e -> do
+          "ArrowLeft" -- cycle through matches
+            | not shiftKey e    &&
+              not metaKey e     &&
+              not altKey e      &&
+              s.options.visible &&
+              s.options.options /= [] -> do
                 noBubble e
                 H.modify highlightPrev
 
-          "ArrowRight"
-            | not shiftKey e &&
-              not metaKey e &&
-              not altKey e -> do
+          "ArrowRight" -- cycle through matches
+            | not shiftKey e    &&
+              not metaKey e     &&
+              not altKey e      &&
+              s.options.visible &&
+              s.options.options /= [] -> do
                 noBubble e
                 H.modify highlightNext
 

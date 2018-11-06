@@ -2,5 +2,5 @@
  {"version": "<VERSION>",
   "update_link": "https://randomnoi.se/files/pinboard/<BASENAME>" ,
   "update_hash":"sha256:<SHA256>",
-  "strict_min_version":"59.0"}
+  "applications":{"gecko":{"strict_min_version":"59.0"}}}
 ]}}}

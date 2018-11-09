@@ -7,11 +7,11 @@ module Pinboard.UI.Component.Debounce
   ) where
 
 import Prelude
-import Control.Monad.Aff            (Fiber, attempt, delay, error, forkAff, killFiber)
-import Control.Monad.Aff.AVar       (AVar, putVar, takeVar, killVar, makeEmptyVar, AVAR)
-import Control.Monad.Aff.Class      (class MonadAff, liftAff)
-import Data.Either                  (Either(..))
-import Data.Time.Duration           (Milliseconds)
+import Effect.Aff            (Fiber, attempt, delay, error, forkAff, killFiber)
+import Effect.Aff.AVar       (AVar, put, take, kill, empty)
+import Effect.Aff.Class      (class MonadAff, liftAff)
+import Data.Either           (Either(..))
+import Data.Time.Duration    (Milliseconds)
 
 -------------------------------------------------------------------------------
 
@@ -21,46 +21,46 @@ import Data.Time.Duration           (Milliseconds)
 -- |
 -- | One common example includes auto-complete, where a remote
 -- | API call for each key press is inefficient.
-newtype Debouncer eff =
+newtype Debouncer =
   Debouncer
   { var :: AVar Unit
-  , fib :: Fiber (avar :: AVAR | eff) Unit }
+  , fib :: Fiber Unit }
 
 
 -- | Construct a new debouncer
 create
-  :: forall m eff
-   . MonadAff (avar :: AVAR | eff) m
+  :: forall m
+   . MonadAff m
   => Milliseconds
-  -> m (Debouncer eff)
+  -> m Debouncer
 create ms = liftAff do
-  var <- makeEmptyVar
+  var <- empty
   fib <- forkAff do
     delay ms
-    putVar unit var
+    put unit var
   pure (Debouncer { var, fib })
 
 
 -- | The thread waiting for this debouncer will be terminated
 -- | and the debouncer will become unusable.
 cancel
-  :: forall m eff
-   . MonadAff (avar :: AVAR | eff) m
-  => Debouncer eff
+  :: forall m
+   . MonadAff m
+  => Debouncer
   -> m Unit
 cancel (Debouncer { var, fib }) = liftAff do
   killFiber (error "canceled") fib
-  killVar (error "canceled") var
+  kill (error "canceled") var
 
 
 -- | The thread waiting for this debouncer will be terminated
 -- | and the returned debouncer can be used with a new thread
 reset
-  :: forall m eff
-   . MonadAff (avar :: AVAR | eff) m
-  => Debouncer eff
+  :: forall m
+   . MonadAff m
+  => Debouncer
   -> Milliseconds
-  -> m (Debouncer eff)
+  -> m Debouncer
 reset db ms = cancel db *> create ms
 
 
@@ -68,12 +68,12 @@ reset db ms = cancel db *> create ms
 -- | amount of time. Only one thread of execution will proceed;
 -- | any other threads will starve.
 whenQuiet
-  :: forall m eff a
-   . MonadAff (avar :: AVAR | eff) m
-  => Debouncer eff
+  :: forall m a
+   . MonadAff m
+  => Debouncer
   -> m a
   -> m Unit
 whenQuiet (Debouncer { var }) action = unit <$ do
-  liftAff (attempt (takeVar var)) >>= case _ of
+  liftAff (attempt (take var)) >>= case _ of
     Right _ -> action $> unit
     _       -> pure unit

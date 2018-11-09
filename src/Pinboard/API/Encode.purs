@@ -11,47 +11,45 @@ module Pinboard.API.Encode
 -------------------------------------------------------------------------------
 
 import Prelude
-import Data.Array               (catMaybes)
 import Data.DateTime            (DateTime)
 import Data.Foldable            (class Foldable, foldMap)
 import Data.Formatter.DateTime  (Formatter, FormatterCommand(..), format)
-import Data.List                as L
-import Data.List                (List(..), singleton, fromFoldable)
+import Data.Array               (singleton, fromFoldable, catMaybes)
 import Data.Maybe               (Maybe(..), fromMaybe)
 import Data.Profunctor.Strong   (second)
-import Data.StrMap              (StrMap, fromFoldableWith, toUnfoldable)
+import Data.List                (fromFoldable) as L
+import Data.Map                 (Map, fromFoldableWith, toUnfoldable)
 import Data.Tuple               (Tuple(..))
-import Data.URI.Common          (joinWith)
-import Data.URI.Query           (Query(..))
-import Global                   (encodeURIComponent)
+import Data.String.Common       (joinWith)
+import URI.Extra.QueryPairs     (QueryPairs(..), keyToString, keyFromString, valueToString, valueFromString)
 import Pinboard.API.Types       (AddOptions, AllOptions, GetOptions, RecentOptions)
 
 -------------------------------------------------------------------------------
 
 class ToQuery a where
-  toQuery :: a -> Query
+  toQuery :: a -> QueryPairs String String
 
 
-instance encodeQuery :: ToQuery Query where
+instance encodeQuery :: ToQuery (QueryPairs String String) where
   toQuery x = x
 
 
 instance encodeTuple :: ToQuery (Tuple String String) where
-  toQuery (Tuple k v) = Query (singleton (Tuple k (Just v)))
+  toQuery (Tuple k v) = QueryPairs (singleton (Tuple k (Just v)))
 
 
-instance encodeTupleM :: ToQuery(Tuple String (Maybe String)) where
-  toQuery (Tuple k v) = Query (singleton (Tuple k v))
+instance encodeTupleM :: ToQuery (Tuple String (Maybe String)) where
+  toQuery (Tuple k v) = QueryPairs (singleton (Tuple k v))
 
 
 instance encodeFoldable :: Foldable f => ToQuery (f (Tuple String String)) where
-  toQuery xs = Query (foldMap op xs)
+  toQuery xs = QueryPairs (foldMap op xs)
     where
       op (Tuple k v) = singleton (Tuple k (Just v))
 
 
 instance encodeFoldableM :: Foldable f => ToQuery (f (Tuple String (Maybe String))) where
-  toQuery xs = Query (fromFoldable xs)
+  toQuery xs = QueryPairs (fromFoldable xs)
 
 
 newtype AddOptions' = AddOptions' AddOptions
@@ -108,7 +106,7 @@ fromDate x = format isoDate x
   where
     -- UTC timestamp in this format: 2010-12-11
     isoDate :: Formatter
-    isoDate = fromFoldable
+    isoDate = L.fromFoldable
       [ YearFull,            Placeholder "-"
       , MonthTwoDigits,      Placeholder "-"
       , DayOfMonthTwoDigits ]
@@ -119,7 +117,7 @@ fromDateTime x = format isoDateTime x
   where
     -- UTC timestamp in this format: 2010-12-11T19:48:02Z
     isoDateTime :: Formatter
-    isoDateTime = fromFoldable
+    isoDateTime = L.fromFoldable
       [ YearFull,            Placeholder "-"
       , MonthTwoDigits,      Placeholder "-"
       , DayOfMonthTwoDigits, Placeholder "T"
@@ -128,17 +126,16 @@ fromDateTime x = format isoDateTime x
       , SecondsTwoDigits,    Placeholder "Z" ]
 
 
-printQuery :: Query -> String
-printQuery (Query m) =
-  case m of
-       Nil -> ""
-       xs  -> "?" <> joinWith "&" (printPart <$> toUnfoldable multiMap)
+printQuery :: QueryPairs String String -> String
+printQuery (QueryPairs m) = case m of
+    [] -> ""
+    _  -> "?" <> joinWith "&" (printPart <$> toUnfoldable multiMap)
   where
-    multiMap :: StrMap (List (Maybe String))
+    multiMap :: Map String (Array (Maybe String))
     multiMap = fromFoldableWith (<>) (map (second singleton) m)
 
-    printPart :: Tuple String (List (Maybe String)) -> String
+    printPart :: Tuple String (Array (Maybe String)) -> String
     printPart (Tuple k vs) =
-      case L.catMaybes vs of
-           Nil  -> encodeURIComponent k
-           ws   -> encodeURIComponent k <> "=" <> joinWith "+" (encodeURIComponent <$> ws)
+      case catMaybes vs of
+        [] -> keyToString (keyFromString k)
+        xs -> keyToString (keyFromString k) <> "=" <> joinWith "+" ((valueToString <<< valueFromString) <$> xs)

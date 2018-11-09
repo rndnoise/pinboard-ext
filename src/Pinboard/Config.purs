@@ -9,17 +9,16 @@ module Pinboard.Config
   ) where
 
 import Prelude
-import Chrome.FFI                         (CHROME)
-import Chrome.Storage.Local               (getMulti, set)
-import Chrome.Storage.Storable            (toStorable)
-import Control.Monad.Aff                  (Aff)
+import WebExtensions.Storage.Local        (getMulti, set)
+import WebExtensions.Storage.Storable     (toStorable)
+import Effect.Aff                         (Aff)
 import Control.Monad.Except               (runExcept)
 import Data.Array                         (elem, filter)
 import Data.Either                        (hush)
-import Data.Foreign                       (Foreign, F, readArray, readBoolean, readString)
 import Data.List                          (List(..), toUnfoldable)
 import Data.Maybe                         (Maybe, fromMaybe)
-import Data.StrMap                        (StrMap, lookup, fromFoldable)
+import Foreign                            (Foreign, F, readArray, readBoolean, readString)
+import Foreign.Object                     (Object, lookup, fromFoldable)
 import Data.Time.Duration                 (Milliseconds(..))
 import Data.Traversable                   (traverse)
 import Data.Tuple                         (Tuple(..), fst, snd)
@@ -59,11 +58,11 @@ type Defaults =
 -------------------------------------------------------------------------------
 
 -- | Load configuration settings from localStorage
-loadConfig :: forall m eff. Applicative m => Aff (chrome :: CHROME | eff) (Config m)
+loadConfig :: forall m. Applicative m => Aff (Config m)
 loadConfig =
   decode <$> getMulti [_authToken, _readLater, _replace, _private, _tags]
   where
-    decode :: StrMap Foreign -> Config m
+    decode :: Object Foreign -> Config m
     decode o =
       { tags:       tagConfig (try [] readTags (lookup _tags o))
       , reloadTags: tagConfig
@@ -84,10 +83,7 @@ loadConfig =
 
 
 -- | Save configuration settings to localStorage
-saveConfig
-  :: forall eff m
-   . Config m
-  -> Aff (chrome :: CHROME | eff) Unit
+saveConfig :: forall m. Config m -> Aff Unit
 saveConfig cfg =
   set (fromFoldable
        [ Tuple _authToken (toStorable cfg.authToken)
@@ -97,19 +93,12 @@ saveConfig cfg =
 
 
 -- | Save set of tags to localStorage
-saveTags
-  :: forall eff
-   . Array String
-  -> Aff (chrome :: CHROME | eff) Unit
+saveTags :: Array String -> Aff Unit
 saveTags xs = set (fromFoldable [Tuple _tags (toStorable xs)])
 
 
 -- | Construct auto-completion settings for given array of tags
-tagConfig
-  :: forall m
-   . Applicative m
-  => Array String
-  -> TI.Config Tag m
+tagConfig :: forall m. Applicative m => Array String -> TI.Config Tag m
 tagConfig tags =
   { parse:        flip Tuple Nil
     -- ^ Convert the text buffer to a tag

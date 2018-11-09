@@ -8,26 +8,22 @@ module Pinboard.UI.Popup.Options
   ) where
 
 import Prelude
-import Chrome.FFI                     (CHROME)
-import Control.Monad.Aff.AVar         (AVAR)
-import Control.Monad.Aff.Class        (class MonadAff)
-import Control.Monad.Jax.Class        (class MonadJax)
+import Effect.Aff.Class               (class MonadAff)
+import Effect.Aff.Jax.Class           (class MonadJax)
 import Data.Either                    (Either(..))
 import Data.Maybe                     (Maybe(..))
 import Data.Time.Duration             (Milliseconds(..))
 import Data.Foldable                  (traverse_)
-import DOM                            (DOM)
-import DOM.HTML.HTMLElement           (focus) as DOM
+import Web.HTML.HTMLElement           (focus) as DOM
 import Halogen                        as H
 import Halogen.HTML                   as HH
 import Halogen.HTML.Events            as HE
 import Halogen.HTML.Properties        as HP
-import Network.HTTP.Affjax            (AJAX)
 import Pinboard.API                   (authToken, Error(..), tagsGet)
 import Pinboard.UI.Component.Debounce (Debouncer)
 import Pinboard.UI.Component.Debounce as D
-import Pinboard.Config                (Config, Defaults, saveConfig, saveTags)
 import Pinboard.UI.Internal.HTML      as PH
+import Pinboard.Config                (Config, Defaults, saveConfig, saveTags)
 
 -------------------------------------------------------------------------------
 
@@ -39,10 +35,10 @@ data Query k
   | OnReplace Boolean k
   | OnAuthToken String k
 
-type State m eff =
+type State m =
   { config   :: Config m
   , status   :: Status
-  , waitAuth :: Maybe (Debouncer (ajax :: AJAX, chrome :: CHROME, dom :: DOM | eff)) }
+  , waitAuth :: Maybe Debouncer }
 
 data Status
   = Info String
@@ -52,14 +48,14 @@ data Status
 type Input m  = Config m
 type Output m = Config m
 
-type HTML      = H.ComponentHTML Query
-type DSL m eff = H.ComponentDSL (State m eff) Query (Output m) m
+type HTML  = H.ComponentHTML Query
+type DSL m = H.ComponentDSL (State m) Query (Output m) m
 
 -------------------------------------------------------------------------------
 
 component
-  :: forall eff m
-   . MonadAff (ajax :: AJAX, avar :: AVAR, chrome :: CHROME, dom :: DOM | eff) m
+  :: forall m
+   . MonadAff m
   => MonadJax m
   => H.Component HH.HTML Query (Input m) (Output m) m
 component =
@@ -69,7 +65,7 @@ component =
   , eval
   , receiver: const Nothing }
   where
-    initialState :: Input m -> State m eff
+    initialState :: Input m -> State m
     initialState c =
       { config:   c
       , waitAuth: Nothing
@@ -77,7 +73,7 @@ component =
                         then "Options"
                         else "API token is required") }
 
-    render :: State m eff -> HTML
+    render :: State m -> HTML
     render s =
       HH.form
       [ HP.id_ "options" ]
@@ -149,51 +145,51 @@ component =
         ]
       ]
 
-    eval :: Query ~> DSL m eff
+    eval :: Query ~> DSL m
     eval q = case q of
       OnBlur k -> pure k
 
       OnFocus k -> k <$ do
         input <- H.getHTMLElementRef (H.RefLabel "token")
-        H.liftEff $ traverse_ DOM.focus input
+        H.liftEffect $ traverse_ DOM.focus input
 
       OnToRead value k -> k <$ do
-        H.modify (defaults (_{ readLater = value }))
+        H.modify_ (defaults (_{ readLater = value }))
         c <- H.gets _.config
         _ <- H.liftAff (saveConfig c)
         H.raise c
 
       OnPrivate value k -> k <$ do
-        H.modify (defaults (_{ private = value }))
+        H.modify_ (defaults (_{ private = value }))
         c <- H.gets _.config
         _ <- H.liftAff (saveConfig c)
         H.raise c
 
       OnReplace value k -> k <$ do
-        H.modify (defaults (_{ replace = value }))
+        H.modify_ (defaults (_{ replace = value }))
         c <- H.gets _.config
         _ <- H.liftAff (saveConfig c)
         H.raise c
 
       OnAuthToken value k -> k <$ do
-        H.modify (config (_{ authToken = authToken value }))
+        H.modify_ (config (_{ authToken = authToken value }))
 
         s <- H.get
         w <- case s.waitAuth of
                Nothing -> D.create   authDelay
                Just _w -> D.reset _w authDelay
-        H.modify (_{ waitAuth = Just w })
+        H.modify_ (_{ waitAuth = Just w })
 
         c <- H.gets _.config
         H.liftAff (saveConfig c)
         H.raise c
 
         H.fork $ D.whenQuiet w do
-          H.modify (_{ status = Info "Checking...", waitAuth = Nothing })
+          H.modify_ (_{ status = Info "Checking...", waitAuth = Nothing })
 
           H.lift (tagsGet (authToken value)) >>= unwrapResponse \tags -> do
-            H.modify (_{ status = Success "Successfully authenticated" })
-            H.modify (config (\x -> x { tags = c.reloadTags tags }))
+            H.modify_ (_{ status = Success "Successfully authenticated" })
+            H.modify_ (config (\x -> x { tags = c.reloadTags tags }))
 
             H.liftAff (saveTags tags)
             H.raise =<< H.gets _.config
@@ -202,23 +198,19 @@ component =
     authDelay = Milliseconds 500.0
 
 
-config :: forall m eff. (Config m -> Config m) -> State m eff -> State m eff
+config :: forall m. (Config m -> Config m) -> State m -> State m
 config f s = s { config = f (s.config) }
 
 
-defaults :: forall m eff. (Defaults -> Defaults) -> State m eff -> State m eff
+defaults :: forall m. (Defaults -> Defaults) -> State m -> State m
 defaults f s = config (\c -> c { defaults = f (c.defaults) }) s
 
 
-unwrapResponse
-  :: forall m eff a
-   . (a -> DSL m eff Unit)
-  -> Either Error a
-  -> DSL m eff Unit
+unwrapResponse :: forall m a. (a -> DSL m Unit) -> Either Error a -> DSL m Unit
 unwrapResponse f (Right a) = f a
 unwrapResponse _ (Left e) =
   case e of
-    JsonError msg  -> H.modify (_{ status = Error ("JSON: "  <> msg) })
-    UserError msg  -> H.modify (_{ status = Error ("Server: " <> msg) })
-    HttpError 401  -> H.modify (_{ status = Error "Incorrect API token" })
-    HttpError code -> H.modify (_{ status = Error ("HTTP " <> show code) })
+    JsonError msg  -> H.modify_ (_{ status = Error ("JSON: "  <> msg) })
+    UserError msg  -> H.modify_ (_{ status = Error ("Server: " <> msg) })
+    HttpError 401  -> H.modify_ (_{ status = Error "Incorrect API token" })
+    HttpError code -> H.modify_ (_{ status = Error ("HTTP " <> show code) })

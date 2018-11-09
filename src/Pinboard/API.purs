@@ -20,20 +20,20 @@ module Pinboard.API
   ) where
 
 import Prelude
-import Chrome.Storage.Storable    (class ToStorable)
-import Control.Monad.Jax.Class    (class MonadJax, affjax)
-import Data.Argonaut.Core         (Json, fromString)
-import Data.Argonaut.Parser       (jsonParser)
-import Data.DateTime              (DateTime)
-import Data.Either                (Either(..), either)
-import Data.Maybe                 (Maybe(..))
-import Data.StrMap                (toArrayWithKey)
-import Data.Traversable           (traverse, sequence)
-import Data.Tuple                 (Tuple(..), fst)
-import Global                     (readFloat)
-import Network.HTTP.Affjax        (AffjaxRequest, defaultRequest)
-import Network.HTTP.StatusCode    (StatusCode(..))
-import Unsafe.Coerce              (unsafeCoerce)
+import WebExtensions.Storage.Storable (class ToStorable)
+import Effect.Aff.Jax.Class           (class MonadJax, class Responds, affjax, responseFormat)
+import Data.Argonaut.Core             (Json, fromString)
+import Data.DateTime                  (DateTime)
+import Data.Either                    (Either(..))
+import Data.Maybe                     (Maybe(..))
+import Foreign.Object                 (toArrayWithKey)
+import Data.Traversable               (traverse, sequence)
+import Data.Tuple                     (Tuple(..), fst)
+import Global                         (readFloat)
+import Affjax                         (Request, defaultRequest)
+import Affjax.StatusCode              (StatusCode(..))
+import Affjax.ResponseFormat          (ResponseFormatError, printResponseFormatError)
+import Unsafe.Coerce                  (unsafeCoerce)
 
 import Pinboard.API.Types
   ( AddOptions
@@ -101,7 +101,7 @@ postsUpdate auth =
       validateStatus r.status
       decodePropWith decodeDate "update_time"
         =<< decodeObject root
-        =<< decodeJson r.response
+        =<< decodeJson r.body
 
 
 -- | Add a bookmark.
@@ -118,7 +118,7 @@ postsAdd auth url description options =
   where
     decode r = do
       validateStatus r.status
-      validateCode "result_code" =<< decodeJson r.response
+      validateCode "result_code" =<< decodeJson r.body
 
     query =
       toQuery
@@ -140,7 +140,7 @@ postsDelete auth url =
     decode r = do
       validateStatus r.status
       validateCode "result_code"
-        =<< decodeJson r.response
+        =<< decodeJson r.body
 
 
 -- | Returns one or more posts on a single day matching the arguments. If
@@ -158,7 +158,7 @@ postsGet auth options =
       validateStatus r.status
       decodePropWith decodePosts "posts"
         =<< decodeObject root
-        =<< decodeJson r.response
+        =<< decodeJson r.body
 
 
 -- | Returns a list of the user's most recent posts, filtered by tag.
@@ -174,7 +174,7 @@ postsRecent auth options =
     decode r = do
       validateStatus r.status
       decodePosts root
-        =<< decodeJson r.response
+        =<< decodeJson r.body
 
 
 -- | Returns a list of dates with the number of posts at each date.
@@ -193,7 +193,7 @@ postsDates auth options =
       traverse op
         <<< toArrayWithKey Tuple
         =<< decodeObject root
-        =<< decodeJson r.response
+        =<< decodeJson r.body
 
     op (Tuple k v) =
       Tuple <$> decodeDate root (fromString k)
@@ -212,7 +212,7 @@ postsAll auth options =
   where
     decode r = do
       validateStatus r.status
-      decodePosts root =<< decodeJson r.response
+      decodePosts root =<< decodeJson r.body
 
 
 -- | Returns a list of popular tags and recommended tags for a given URL.
@@ -229,7 +229,7 @@ postsSuggest auth url =
   where
     decode r = do
       _ <- validateStatus r.status
-      o <- decodeObject root =<< decodeJson r.response
+      o <- decodeObject root =<< decodeJson r.body
       { popular: _, recommended: _ }
         <$> flip decodePropWith "popular" (\name x ->
               traverse (decodeString name) =<< decodeArray name x) o
@@ -251,7 +251,7 @@ tagsGetWithCounts auth =
       validateStatus r.status
       traverse op
         <<< toArrayWithKey Tuple
-        =<< decodeObject root =<< decodeJson r.response
+        =<< decodeObject root =<< decodeJson r.body
 
     op (Tuple k v) =
       Tuple k <$> map readFloat (decodeString root v)
@@ -279,7 +279,7 @@ tagsDelete auth tag =
   where
     decode r = do
       validateStatus r.status
-      validateCode "result" =<< decodeJson r.response
+      validateCode "result" =<< decodeJson r.body
 
 
 -- | Rename an tag, or fold it in to an existing tag.
@@ -296,7 +296,7 @@ tagsRename auth (Old old) (New new) =
     query = [Tuple "old" old, Tuple "new" new]
     decode r = do
       validateStatus r.status
-      validateCode "result" =<< decodeJson r.response
+      validateCode "result" =<< decodeJson r.body
 
 
 -- | Returns the user's secret RSS key (for viewing private feeds).
@@ -312,7 +312,7 @@ userSecret auth =
       validateStatus r.status
       decodePropWith decodeString "result"
         =<< decodeObject root
-        =<< decodeJson r.response
+        =<< decodeJson r.body
 
 
 -- | Returns the user's API token (for making API calls without a password)
@@ -329,7 +329,7 @@ userApiToken auth =
       map authToken
         $ decodePropWith decodeString "result"
         =<< decodeObject root
-        =<< decodeJson r.response
+        =<< decodeJson r.body
 
 
 -- | Returns a list of the user's notes
@@ -346,7 +346,7 @@ notesList auth =
       traverse decodeNote
         =<< decodePropWith decodeArray "notes"
         =<< decodeObject root
-        =<< decodeJson r.response
+        =<< decodeJson r.body
 
     decodeNote x = do
       o <- decodeObject (Just "notes") x
@@ -372,7 +372,7 @@ notesGet auth id =
   where
     decode r = do
       _ <- validateStatus r.status
-      o <- decodeObject root =<< decodeJson r.response
+      o <- decodeObject root =<< decodeJson r.body
       { id: _, text: _, hash: _, title: _, length: _, createdAt: _, updatedAt: _ }
         <$> decodePropWith decodeString "id" o
         <*> decodePropWith decodeString "text" o
@@ -390,9 +390,11 @@ baseUrl = "https://api.pinboard.in/v1/"
 
 -- | Construct a request that has no query parameters
 makeReq_
-  :: AuthToken
+  :: forall r
+   . Responds r
+  => AuthToken
   -> String
-  -> AffjaxRequest Unit
+  -> Request r
 makeReq_ (AuthToken auth) path =
   defaultRequest
   { url = baseUrl <> path <> printQuery query
@@ -402,6 +404,7 @@ makeReq_ (AuthToken auth) path =
   -- Firefox display the ugly modal password prompt.
   , username = if auth == "" then Just "null" else Nothing
   , password = if auth == "" then Just "null" else Nothing
+  , responseFormat = responseFormat
   }
   where
     query =
@@ -412,17 +415,19 @@ makeReq_ (AuthToken auth) path =
 
 -- | Construct a request with given query parameters
 makeReq
-  :: forall q
+  :: forall q r
    . ToQuery q
+  => Responds r
   => AuthToken
   -> String
   -> q
-  -> AffjaxRequest Unit
+  -> Request r
 makeReq (AuthToken auth) path params =
   defaultRequest
   { url = baseUrl <> path <> printQuery query
   , username = if auth == "" then Just "null" else Nothing
   , password = if auth == "" then Just "null" else Nothing
+  , responseFormat = responseFormat
   }
   where
     query =
@@ -447,9 +452,10 @@ validateCode name x = do
     else Left (UserError c)
 
 
-decodeJson :: String -> Either Error Json
-decodeJson = either (Left <<< JsonError) Right <<< jsonParser
-
+decodeJson :: forall a. Either ResponseFormatError a -> Either Error a
+decodeJson = case _ of
+  Left x  -> Left (JsonError (printResponseFormatError x))
+  Right x -> pure x
 
 root :: Name
 root = Just "root"

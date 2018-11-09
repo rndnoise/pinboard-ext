@@ -3,9 +3,8 @@ module Pinboard.UI.Internal.Popup
   ) where
 
 import Prelude
-import DOM                (DOM)
-import Control.Monad.Eff  (Eff)
+import Effect (Effect)
 
-closePopup :: forall eff. Eff (dom :: DOM | eff) Unit
+closePopup :: Effect Unit
 closePopup = _closePopup
-foreign import _closePopup :: forall eff. Eff (dom :: DOM | eff) Unit
+foreign import _closePopup :: Effect Unit

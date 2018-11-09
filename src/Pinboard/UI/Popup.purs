@@ -3,14 +3,12 @@ module Pinboard.UI.Popup
   ) where
 
 import Prelude
-import Chrome.FFI                     (CHROME)
-import Chrome.Tabs                    (Tab, query, queryOptions) as CT
-import Chrome.Tabs.Events             (onRemoved) as CT
-import Chrome.Tabs.Tab                (active, id, windowId) as CT
-import Control.Monad.Aff.Class        (class MonadAff)
-import Control.Monad.Eff              (Eff)
-import Control.Monad.Eff.Now          (NOW)
-import Control.Monad.Jax.Class        (class MonadJax)
+import WebExtensions.Tabs             (Tab, query, queryOptions) as CT
+import WebExtensions.Tabs.Events      (onRemoved) as CT
+import WebExtensions.Tabs.Tab         (active, id, windowId) as CT
+import Effect                         (Effect)
+import Effect.Aff.Class               (class MonadAff)
+import Effect.Aff.Jax.Class           (class MonadJax)
 import Data.Array                     (find)
 import Data.Either.Nested             (Either3, in1, in2, in3)
 import Data.Functor.Coproduct.Nested  (Coproduct3)
@@ -23,7 +21,6 @@ import Halogen.HTML                   as HH
 import Halogen.HTML.Events            as HE
 import Halogen.HTML.Properties        as HP
 import Halogen.VDom.Driver            as HV
-import Network.HTTP.Affjax            (AJAX)
 import Pinboard.Config                (Config, loadConfig)
 import Pinboard.UI.Internal.HTML      as PH
 import Pinboard.UI.Internal.Popup     (closePopup)
@@ -33,7 +30,7 @@ import Pinboard.UI.Popup.Single       as PS
 
 -------------------------------------------------------------------------------
 
-main :: Eff (HA.HalogenEffects (ajax :: AJAX, chrome :: CHROME, now :: NOW)) Unit
+main :: Effect Unit
 main = HA.runHalogenAff do
   conf <- loadConfig
   tabs <- CT.query (CT.queryOptions { currentWindow = Just true })
@@ -41,7 +38,7 @@ main = HA.runHalogenAff do
   _    <- HV.runUI component (Tuple conf tabs) body
 
   -- Close the popup if the active tab is closed
-  H.liftEff $ CT.onRemoved $ \tabId info -> do
+  H.liftEffect $ CT.onRemoved $ \tabId info -> do
     case find CT.active tabs of
       Just t | CT.windowId t == info.windowId
             && CT.id t == Just tabId -> closePopup
@@ -85,8 +82,8 @@ type HTML m = H.ParentHTML (Query m) (Query' m) Slot m
 type DSL m  = H.ParentDSL (State m) (Query m) (Query' m) Slot Output m
 
 component
-  :: forall eff m
-   . MonadAff (HA.HalogenEffects (ajax :: AJAX, chrome :: CHROME, now :: NOW | eff)) m
+  :: forall m
+   . MonadAff m
   => MonadJax m
   => H.Component HH.HTML (Query m) (Input m) Output m
 component =
@@ -154,19 +151,19 @@ component =
           _ -> pure Nothing
 
       OnClickMulti k -> k <$ do
-        H.modify (_{ active = multiSlot  })
+        H.modify_ (_{ active = multiSlot  })
         swapFocus multiSlot
 
       OnClickSingle k -> k <$ do
-        H.modify (_{ active = singleSlot })
+        H.modify_ (_{ active = singleSlot })
         swapFocus singleSlot
 
       OnClickOptions k -> k <$ do
-        H.modify (_{ active = optionsSlot })
+        H.modify_ (_{ active = optionsSlot })
         swapFocus optionsSlot
 
       FromOptions config k -> k <$ do
-        H.modify (_{ config = config })
+        H.modify_ (_{ config = config })
 
     multiSlot = in1 unit
     singleSlot = in2 unit

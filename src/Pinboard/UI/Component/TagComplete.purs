@@ -10,12 +10,12 @@ import Control.Alt                ((<|>))
 import Control.Monad.Writer.Trans (WriterT, execWriterT, tell)
 import Control.Plus               (empty)
 import Data.Array                 (catMaybes)
-import Data.Char                  (toUpper)
+import Data.Array.NonEmpty        (toArray)
+import Data.Char.Unicode          (toUpper)
 import Data.Either                (fromRight)
-import Data.List                  (List(..), (:), fromFoldable, uncons, zipWith)
+import Data.List                  (List(..), (:), fromFoldable, head, uncons, zipWith)
 import Data.Maybe                 (Maybe(..), fromMaybe)
-import Data.Sequence              (Seq, head)
-import Data.String                (singleton, drop)
+import Data.String.CodeUnits      (singleton, drop)
 import Data.String.Regex          (regex, match, split)
 import Data.String.Regex.Flags    (global)
 import Data.String.Unsafe         (charAt)
@@ -25,7 +25,7 @@ import Partial.Unsafe             (unsafePartial)
 
 -------------------------------------------------------------------------------
 
-type Search w a = WriterT w Seq a
+type Search w a = WriterT w List a
 
 -- | Concise tuple
 data T a = T a a
@@ -123,4 +123,4 @@ parse s  =
   where
     pattern = unsafePartial (fromRight (regex "[^a-zA-Z0-9]+" global))
     letters = map L (fromFoldable (split pattern s))
-    symbols = map S (fromFoldable (fromMaybe [] (map catMaybes (match pattern s))))
+    symbols = map S (fromFoldable (fromMaybe [] (map (catMaybes <<< toArray) (match pattern s))))

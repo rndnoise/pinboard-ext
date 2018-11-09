@@ -10,14 +10,12 @@ module Pinboard.UI.Component.TagInput
   ) where
 
 import Prelude
-import Control.Monad.Aff.AVar         (AVAR)
-import Control.Monad.Aff.Class        (class MonadAff)
+import Effect.Aff.Class               (class MonadAff)
 import Control.MonadPlus              (guard)
-import DOM                            (DOM)
-import DOM.Event.Event                (preventDefault)
-import DOM.Event.KeyboardEvent        (key, metaKey, shiftKey, altKey)
-import DOM.Event.Types                (KeyboardEvent, FocusEvent, keyboardEventToEvent)
-import DOM.HTML.HTMLElement           (focus) as DOM
+import Web.Event.Event                (preventDefault)
+import Web.UIEvent.FocusEvent         (FocusEvent)
+import Web.UIEvent.KeyboardEvent      (KeyboardEvent, key, metaKey, shiftKey, altKey, toEvent)
+import Web.HTML.HTMLElement           (focus) as DOM
 import Data.Array                     (find, null, snoc, init, mapWithIndex, (!!), deleteAt, length)
 import Data.Filterable                (maybeBool)
 import Data.Foldable                  (elem, traverse_)
@@ -59,7 +57,7 @@ type Config i m =
   , showDelay    :: Milliseconds }
     -- ^ Wait after text entry before computing suggestions
 
-type State i m eff = -- TODO: don't care about eff
+type State i m =
   { buffer  :: String
     -- ^ The value of the text input field
 
@@ -69,12 +67,12 @@ type State i m eff = -- TODO: don't care about eff
   , chosen  :: Array i
     -- ^ The chosen items
 
-  , options :: Options i eff
+  , options :: Options i
     -- ^ State of the current suggestions
 
   , config  :: Config i m }
 
-type Options i eff = -- TODO: don't care about eff
+type Options i =
   { visible     :: Boolean
     -- ^ Whether the suggestions are displayed
 
@@ -84,9 +82,9 @@ type Options i eff = -- TODO: don't care about eff
   , hoverIdx    :: Maybe Int
     -- ^ Which suggestion is currently highlighted
 
-  , waitToHide  :: Maybe (Debouncer (dom :: DOM | eff))
+  , waitToHide  :: Maybe Debouncer
 
-  , waitToShow  :: Maybe (Debouncer (dom :: DOM | eff)) }
+  , waitToShow  :: Maybe Debouncer }
 
 data Query i m k
   = Recv (Input i m) k
@@ -124,14 +122,14 @@ data Query i m k
 type Output i = Array i
   -- ^ Contains the now-current set of chosen items
 
-type HTML i m    = H.ComponentHTML (Query i m)
-type DSL i m eff = H.ComponentDSL (State i m eff) (Query i m) (Output i) m
+type HTML i m = H.ComponentHTML (Query i m)
+type DSL i m  = H.ComponentDSL (State i m) (Query i m) (Output i) m
 
 -------------------------------------------------------------------------------
 
 component
-  :: forall i m eff
-   . MonadAff (dom :: DOM, avar :: AVAR | eff) m
+  :: forall i m
+   . MonadAff m
   => Eq i
   => H.Component HH.HTML (Query i m) (Input i m) (Output i) m
 component =
@@ -141,7 +139,7 @@ component =
   , eval
   , receiver: \i -> Just (Recv i unit) }
   where
-    initialState :: Input i m -> State i m eff
+    initialState :: Input i m -> State i m
     initialState (Tuple config chosen) =
       { chosen
       , config
@@ -153,7 +151,7 @@ component =
                  , waitToHide: Nothing
                  , waitToShow: Nothing }}
 
-    render :: State i m eff -> HTML i m
+    render :: State i m -> HTML i m
     render s =
       HH.div
       [ PH.classes (join [ pure "tags"
@@ -197,21 +195,21 @@ component =
                     [ s.config.renderOption x ]
       ]
 
-    eval :: Query i m ~> DSL i m eff
+    eval :: Query i m ~> DSL i m
     eval q = case q of
       Recv (Tuple c x) k -> k <$ do
-        H.modify (_{ chosen = x, config = c })
+        H.modify_ (_{ chosen = x, config = c })
 
       Focus k -> k <$ do
         input <- H.getHTMLElementRef (H.RefLabel "tags-text")
-        H.liftEff $ traverse_ DOM.focus input
+        H.liftEffect $ traverse_ DOM.focus input
 
       Reject n k -> k <$ do
-        H.modify (rejectChosen n)
+        H.modify_ (rejectChosen n)
         H.raise =<< H.gets _.chosen
 
       Choose n k -> k <$ do
-        H.modify (chooseOption n)
+        H.modify_ (chooseOption n)
         H.raise =<< H.gets _.chosen
 
       OnInput v k -> k <$ do
@@ -221,8 +219,8 @@ component =
                Nothing -> D.create   s.config.showDelay
                Just _w -> D.reset _w s.config.showDelay
 
-        H.modify (_{ buffer     = v      } <<<
-         options (_{ waitToShow = Just w }))
+        H.modify_ $ _{ buffer = v } <<<
+                    options (_{ waitToShow = Just w })
 
         -- This wait prevents issuing rapid-fire requests to complete the
         -- current value (which might not finish before the next keypress)
@@ -232,8 +230,8 @@ component =
       DoInput k -> k <$ do
         s <- H.get
         o <- H.lift (s.config.suggest s.chosen s.buffer)
-        H.modify (updateSuggestions o <<<
-         options (_{ visible = true, waitToShow = Nothing }))
+        H.modify_ $ updateSuggestions o <<<
+                    options (_{ visible = true, waitToShow = Nothing })
 
       OnBlur e k -> k <$ do
         -- Wait a tick for user to stop clicking before hiding suggestions
@@ -242,8 +240,8 @@ component =
                Nothing -> D.create   s.config.hideDelay
                Just _w -> D.reset _w s.config.hideDelay
 
-        H.modify (_{ focused    = false  } <<<
-         options (_{ waitToHide = Just w }))
+        H.modify_ $ _{ focused = false } <<<
+                    options (_{ waitToHide = Just w })
 
         -- If user clicked a suggestion (`Choose n`), this delay ensures that the
         -- half-entered buffer text isn't chosen instead of the clicked suggestion
@@ -251,14 +249,14 @@ component =
           eval (Blur k)
 
       Blur k -> k <$ do
-        H.modify (chooseBuffer <<<
-         options (_{ visible    = false
-                   , options    = []
-                   , waitToHide = Nothing }))
+        H.modify_ $ chooseBuffer <<<
+                    options (_{ visible    = false
+                              , options    = []
+                              , waitToHide = Nothing })
         H.raise =<< H.gets _.chosen
 
       OnFocus e k -> k <$ do
-        H.modify (_{ focused = true })
+        H.modify_ (_{ focused = true })
 
         -- If we were about to hide suggestions, don't
         o <- H.gets _.options
@@ -266,46 +264,46 @@ component =
                Nothing -> pure unit
                Just w  -> D.cancel w
 
-        H.modify (options (_{ waitToHide = Nothing }))
+        H.modify_ (options (_{ waitToHide = Nothing }))
 
       OnKey e k -> k <$ do
         s <- H.get
         case key e of
           "Backspace" -- clear all tags OR remove last item
-            | metaKey e -> H.modify resetState
+            | metaKey e -> H.modify_ resetState
             | otherwise -> when (bufferIsBlank s) $ do
                              noBubble e
-                             H.modify rejectLast
+                             H.modify_ rejectLast
                              H.raise =<< H.gets _.chosen
 
           "Enter" -> do -- select current match OR use buffer text if no match is selected
             case s.options.hoverIdx of
                  Just n -> do
                    noBubble e
-                   H.modify (chooseOption n)
+                   H.modify_ (chooseOption n)
                    H.raise =<< H.gets _.chosen
                  Nothing
                    | bufferIsBlank s -> pure unit
                    | otherwise       -> do
                      noBubble e
-                     H.modify chooseBuffer
+                     H.modify_ chooseBuffer
                      H.raise =<< H.gets _.chosen
 
           x | chooseKey x -> do
             noBubble e
-            H.modify chooseBuffer
+            H.modify_ chooseBuffer
             H.raise =<< H.gets _.chosen
 
           "Escape" -> do
             noBubble e
-            H.modify clearBuffer
+            H.modify_ clearBuffer
 
           "Tab" -- cycle through matches
             | not (bufferIsBlank s) -> do
                 noBubble e
                 if shiftKey e
-                  then H.modify highlightPrev
-                  else H.modify highlightNext
+                  then H.modify_ highlightPrev
+                  else H.modify_ highlightNext
 
           "ArrowLeft" -- cycle through matches
             | not shiftKey e    &&
@@ -314,7 +312,7 @@ component =
               s.options.visible &&
               s.options.options /= [] -> do
                 noBubble e
-                H.modify highlightPrev
+                H.modify_ highlightPrev
 
           "ArrowRight" -- cycle through matches
             | not shiftKey e    &&
@@ -323,11 +321,11 @@ component =
               s.options.visible &&
               s.options.options /= [] -> do
                 noBubble e
-                H.modify highlightNext
+                H.modify_ highlightNext
 
           "ArrowDown"
-            | not s.options.visible ->
-                H.modify (options (_{ visible = true }))
+            | not s.options.visible -> do
+                H.modify_ (options (_{ visible = true }))
 
           _ -> pure unit
 
@@ -337,25 +335,25 @@ component =
 
 -- | TODO
 noBubble
-  :: forall i eff m
-   . MonadAff (dom :: DOM, avar :: AVAR | eff) m
+  :: forall i m
+   . MonadAff m
   => KeyboardEvent
-  -> DSL i m eff Unit
-noBubble = H.liftEff <<< preventDefault <<< keyboardEventToEvent
+  -> DSL i m Unit
+noBubble = H.liftEffect <<< preventDefault <<< toEvent
 
 
 -- | TODO
-options :: forall i m eff. (Options i eff -> Options i eff) -> State i m eff -> State i m eff
+options :: forall i m. (Options i -> Options i) -> State i m -> State i m
 options f s = s { options = f s.options }
 
 
 -- | TODO
-rejectChosen :: forall i m eff. Int -> State i m eff -> State i m eff
+rejectChosen :: forall i m. Int -> State i m -> State i m
 rejectChosen k s = s { chosen = fromMaybe [] (deleteAt k s.chosen) }
 
 
 -- | TODO
-chooseOption :: forall i m eff. Int -> State i m eff -> State i m eff
+chooseOption :: forall i m. Int -> State i m -> State i m
 chooseOption k s = case s.options.options !! k of
   Nothing -> s
   Just x  -> s { chosen  = s.chosen `snoc` x
@@ -366,7 +364,7 @@ chooseOption k s = case s.options.options !! k of
 
 
 -- | TODO
-chooseBuffer :: forall i m eff. State i m eff -> State i m eff
+chooseBuffer :: forall i m. State i m -> State i m
 chooseBuffer s
   | s.buffer == "" = s
   | otherwise      =
@@ -379,7 +377,7 @@ chooseBuffer s
 
 
 -- | TODO
-updateSuggestions :: forall i m eff. Eq i => Array i -> State i m eff -> State i m eff
+updateSuggestions :: forall i m. Eq i => Array i -> State i m -> State i m
 updateSuggestions xs s =
   s { options = case o.hoverIdx of
                   Nothing -> o { options = xs }
@@ -389,7 +387,7 @@ updateSuggestions xs s =
 
 
 -- | TODO
-clearBuffer :: forall i m eff. State i m eff -> State i m eff
+clearBuffer :: forall i m. State i m -> State i m
 clearBuffer s =
   s { buffer  = ""
     , options = { visible:     false
@@ -400,7 +398,7 @@ clearBuffer s =
 
 
 -- | TODO
-resetState :: forall i m eff. State i m eff -> State i m eff
+resetState :: forall i m. State i m -> State i m
 resetState s =
   s { buffer  = ""
     , chosen  = []
@@ -418,12 +416,12 @@ bufferIsBlank s = s.buffer == ""
 
 
 -- | TODO
-rejectLast :: forall i m eff. State i m eff -> State i m eff
+rejectLast :: forall i m. State i m -> State i m
 rejectLast s = s { chosen = fromMaybe s.chosen (init s.chosen) }
 
 
 -- | TODO
-highlightPrev :: forall i m eff. State i m eff -> State i m eff
+highlightPrev :: forall i m. State i m -> State i m
 highlightPrev s
   | not s.options.visible = s
   | otherwise = s { options = case o.hoverIdx of
@@ -433,7 +431,7 @@ highlightPrev s
 
 
 -- | TODO
-highlightNext :: forall i m eff. State i m eff -> State i m eff
+highlightNext :: forall i m. State i m -> State i m
 highlightNext s
   | not s.options.visible = s
   | otherwise = s { options = case o.hoverIdx of

@@ -12,17 +12,17 @@ module Pinboard.API.Decode
   ) where
 
 import Prelude
-import Control.Monad.Eff.Unsafe (unsafePerformEff)
-import Data.Argonaut.Core       (Json, toString, toObject, toNumber, toArray)
-import Data.Array               (filter)
-import Data.DateTime            (DateTime)
-import Data.Either              (Either(..), note)
-import Data.JSDate              (parse, toDateTime)
-import Data.Maybe               (Maybe(..))
-import Data.StrMap              (StrMap, lookup)
-import Data.String              (Pattern(..), split)
-import Data.Traversable         (traverse)
-import Pinboard.API.Types       (Error(..), Post)
+import Effect.Unsafe      (unsafePerformEffect)
+import Data.Argonaut.Core (Json, toString, toObject, toNumber, toArray)
+import Data.Array         (filter)
+import Data.DateTime      (DateTime)
+import Data.Either        (Either(..), note)
+import Data.JSDate        (parse, toDateTime)
+import Data.Maybe         (Maybe(..))
+import Foreign.Object     (Object, lookup)
+import Data.String        (Pattern(..), split)
+import Data.Traversable   (traverse)
+import Pinboard.API.Types (Error(..), Post)
 
 -------------------------------------------------------------------------------
 
@@ -50,17 +50,17 @@ decodePosts name x = traverse decodePost =<< decodeArray name x
       filter (_ /= "") <<< split (Pattern " ") <$> decodeString name' z
 
 
-decodeObject :: Name -> Json -> Either Error (StrMap Json)
+decodeObject :: Name -> Json -> Either Error (Object Json)
 decodeObject name x = explain name "not an object" (toObject x)
 
 
-decodePropWith :: forall a. (Name -> Json -> Either Error a) -> String -> (StrMap Json) -> Either Error a
+decodePropWith :: forall a. (Name -> Json -> Either Error a) -> String -> (Object Json) -> Either Error a
 decodePropWith f name x = do
   o <- explain (Just name) "property is missing" (lookup name x)
   f (Just name) o
 
 
-decodePropWithM :: forall a. (Name -> Json -> Either Error a) -> String -> (StrMap Json) -> Either Error (Maybe a)
+decodePropWithM :: forall a. (Name -> Json -> Either Error a) -> String -> (Object Json) -> Either Error (Maybe a)
 decodePropWithM f name x =
   case lookup name x of
     Nothing -> Right Nothing
@@ -92,7 +92,7 @@ decodeDate :: Name -> Json -> Either Error DateTime
 decodeDate name x = do
   s <- explain name "not a date" (toString x)
   explain name "not a date" (date' s)
-  where date' s = toDateTime (unsafePerformEff (parse s))
+  where date' s = toDateTime (unsafePerformEffect (parse s))
 
 -------------------------------------------------------------------------------
 

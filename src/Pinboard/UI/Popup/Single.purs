@@ -8,15 +8,12 @@ module Pinboard.UI.Popup.Single
   ) where
 
 import Prelude
-import Chrome.Tabs.Tab                (Tab, title, url) as CT
+import WebExtensions.Tabs.Tab         (Tab, title, url) as CT
 -- ort Control.Comonad                (extract)
-import Control.Monad.Aff.AVar         (AVAR)
-import Control.Monad.Aff.Class        (class MonadAff)
-import Control.Monad.Eff.Now          (NOW) --, nowDateTime)
-import Control.Monad.Jax.Class        (class MonadJax)
-import DOM                            (DOM)
-import DOM.Event.Event                (Event, preventDefault)
-import DOM.Event.Types                (mouseEventToEvent)
+import Effect.Aff.Class               (class MonadAff)
+import Effect.Aff.Jax.Class           (class MonadJax)
+import Web.Event.Event                (Event, preventDefault)
+import Web.UIEvent.MouseEvent         (toEvent)
 import Data.Array                     (uncons)
 import Data.DateTime                  (DateTime)
 import Data.Either                    (Either(..), either)
@@ -28,7 +25,6 @@ import Halogen                        as H
 import Halogen.HTML                   as HH
 import Halogen.HTML.Events            as HE
 import Halogen.HTML.Properties        as HP
-import Network.HTTP.Affjax            (AJAX)
 import Pinboard.Config                (Config, Tag)
 import Pinboard.UI.Component.TagInput as TI
 import Pinboard.UI.Internal.HTML      as PH
@@ -87,8 +83,8 @@ type DSL m  = H.ParentDSL (State m) (Query m) (TI.Query Tag m) Slot Output m
 -------------------------------------------------------------------------------
 
 component
-  :: forall e m
-   . MonadAff (ajax :: AJAX, avar :: AVAR, dom :: DOM, now :: NOW | e) m
+  :: forall m
+   . MonadAff m
   => MonadJax m
   => H.Component HH.HTML (Query m) (Input m) Output m
 component =
@@ -191,14 +187,14 @@ component =
         <>
         [ HH.button
           [ PH.class_ "primary"
-          , HE.onClick (HE.input (Save <<< mouseEventToEvent))
+          , HE.onClick (HE.input (Save <<< toEvent))
           ]
           [ HH.text "Save" ]
         ]
         <>
        ([ HH.button
           [ PH.class_ "danger"
-          , HE.onClick (HE.input (Delete <<< mouseEventToEvent))
+          , HE.onClick (HE.input (Delete <<< toEvent))
           ]
           [ HH.text "Delete" ]
         ] # guard (isJust s.time))
@@ -214,34 +210,34 @@ component =
         unwrapResponse r \posts ->
           case uncons posts of
             Nothing ->
-              H.modify (_{ status = Info "New bookmark" })
+              H.modify_ (_{ status = Info "New bookmark" })
 
             Just { head } -> do
-              let t = either id id (formatDateTime "MMM DD, YYYY" head.time)
-              H.modify (_{ status    = Info ("First bookmarked " <> t)
-                         , title     = head.description
-                         , desc      = head.extended
-                         , tags      = head.tags
-                         , readLater = head.toread
-                         , private   = not head.shared
-                         , time      = Just head.time })
+              let t = either identity identity (formatDateTime "MMM DD, YYYY" head.time)
+              H.modify_ (_{ status    = Info ("First bookmarked " <> t)
+                          , title     = head.description
+                          , desc      = head.extended
+                          , tags      = head.tags
+                          , readLater = head.toread
+                          , private   = not head.shared
+                          , time      = Just head.time })
 
       -- The options page has changed the configuration
       Recv (Tuple c _) k -> k <$ do
-        H.modify (_{ config = c })
+        H.modify_ (_{ config = c })
 
         -- Reload details, perhaps with a different API token
         _ <- eval (Init k)
 
         -- Don't change flags if bookmark was already saved
         whenM (H.gets (isNothing <<< _.time)) $
-          H.modify (_{ readLater = c.defaults.readLater
-                     , private   = c.defaults.private })
+          H.modify_ (_{ readLater = c.defaults.readLater
+                      , private   = c.defaults.private })
 
       -- User interaction events
       Save e k -> k <$ do
         noBubble e
-        H.modify (_{ status = Info "Saving..." })
+        H.modify_ (_{ status = Info "Saving..." })
 
         _ <- H.query TagSlot (H.action TI.Blur)
         s <- H.get
@@ -254,32 +250,32 @@ component =
                     # postsAdd s.config.authToken s.url s.title
 
         unwrapResponse r \_ -> do
-          H.liftEff closePopup
-          -- now <- map extract (H.liftEff nowDateTime)
-          -- H.modify (_{ status = Success "Saved", time = Just now })
+          H.liftEffect closePopup
+          -- now <- map extract (H.liftEffect nowDateTime)
+          -- H.modify_ (_{ status = Success "Saved", time = Just now })
 
       Delete e k -> k <$ do
         noBubble e
-        H.modify (_{ status = Info "Deleting..." })
+        H.modify_ (_{ status = Info "Deleting..." })
 
         s <- H.get
         r <- H.lift $ postsDelete s.config.authToken s.url
 
         unwrapResponse r \_ -> do
-          H.liftEff closePopup
-          -- H.modify (_{ status = Success "Deleted", time = Nothing })
+          H.liftEffect closePopup
+          -- H.modify_ (_{ status = Success "Deleted", time = Nothing })
 
       OnBlur k -> pure k
       OnFocus k -> k <$ H.query TagSlot (H.action TI.Focus)
-      OnUrl x k -> k <$ H.modify (_{ url = x })
-      OnDesc x k -> k <$ H.modify (_{ desc = x })
-      OnTitle x k -> k <$ H.modify (_{ title = x })
-      OnPrivate x k -> k <$ H.modify (_{ private = x })
-      OnReadLater x k -> k <$ H.modify (_{ readLater = x })
+      OnUrl x k -> k <$ H.modify_ (_{ url = x })
+      OnDesc x k -> k <$ H.modify_ (_{ desc = x })
+      OnTitle x k -> k <$ H.modify_ (_{ title = x })
+      OnPrivate x k -> k <$ H.modify_ (_{ private = x })
+      OnReadLater x k -> k <$ H.modify_ (_{ readLater = x })
 
       FromTagInput tags k -> k <$ do
         toText <- H.gets _.config.tags.textValue
-        H.modify (_{ tags = map toText tags })
+        H.modify_ (_{ tags = map toText tags })
 
 
 unwrapResponse
@@ -290,15 +286,11 @@ unwrapResponse
 unwrapResponse (Right a) f = f a
 unwrapResponse (Left e) _ =
   case e of
-    JsonError msg  -> H.modify (_{ status = Error ("JSON: "  <> msg) })
-    UserError msg  -> H.modify (_{ status = Error ("Server: " <> msg) })
-    HttpError 401  -> H.modify (_{ status = Error "Incorrect API token" })
-    HttpError code -> H.modify (_{ status = Error ("HTTP " <> show code) })
+    JsonError msg  -> H.modify_ (_{ status = Error ("JSON: "  <> msg) })
+    UserError msg  -> H.modify_ (_{ status = Error ("Server: " <> msg) })
+    HttpError 401  -> H.modify_ (_{ status = Error "Incorrect API token" })
+    HttpError code -> H.modify_ (_{ status = Error ("HTTP " <> show code) })
 
 
-noBubble
-  :: forall e m
-   . MonadAff (dom :: DOM | e) m
-  => Event
-  -> DSL m Unit
-noBubble = H.liftEff <<< preventDefault
+noBubble :: forall m. MonadAff m => Event -> DSL m Unit
+noBubble = H.liftEffect <<< preventDefault

@@ -9,12 +9,11 @@ module Pinboard.UI.Popup.Multi
   ) where
 
 import Prelude
-import Chrome.Tabs.Tab                as CT
-import Control.Monad.Aff.Class        (class MonadAff)
-import Control.Monad.Jax.Class        (class MonadJax)
-import DOM                            (DOM)
-import DOM.Event.Event                (preventDefault)
-import DOM.Event.Types                (MouseEvent, mouseEventToEvent)
+import WebExtensions.Tabs.Tab         as CT
+import Effect.Aff.Class               (class MonadAff)
+import Effect.Aff.Jax.Class           (class MonadJax)
+import Web.Event.Event                (preventDefault)
+import Web.UIEvent.MouseEvent         (MouseEvent, toEvent)
 import Data.Array                     (all, any, mapWithIndex, modifyAt)
 import Data.Either                    (Either(..))
 import Data.Filterable                (filterMap, maybeBool)
@@ -23,11 +22,9 @@ import Data.String                    (Pattern(..), indexOf)
 import Data.TraversableWithIndex      (forWithIndex)
 import Data.Tuple                     (Tuple(..))
 import Halogen                        as H
-import Halogen.Aff                    as HA
 import Halogen.HTML                   as HH
 import Halogen.HTML.Events            as HE
 import Halogen.HTML.Properties        as HP
-import Network.HTTP.Affjax            (AJAX)
 import Pinboard.API                   (Error(..), postsAdd, addOptions)
 import Pinboard.Config                (Config, Tag)
 import Pinboard.UI.Component.TagInput as TI
@@ -84,8 +81,8 @@ derive instance ordSlot :: Ord Slot
 -------------------------------------------------------------------------------
 
 component
-  :: forall e m
-   . MonadAff (HA.HalogenEffects (ajax :: AJAX | e)) m
+  :: forall m
+   . MonadAff m
   => MonadJax m
   => H.Component HH.HTML (Query m) (Input m) Output m
 component =
@@ -223,7 +220,7 @@ component =
     eval q = case q of
       -- The options page has changed the configuration
       Recv (Tuple c _) k -> k <$ do
-        H.modify (\s -> s { config    = c
+        H.modify_ (\s -> s { config    = c
                           , tabs      = map (_{ status = Idle }) s.tabs
                           , readLater = c.defaults.readLater
                           , private   = c.defaults.private
@@ -235,23 +232,23 @@ component =
         H.query TagSlot (H.action TI.Focus)
 
       OnTitle n value k -> k <$ do
-        H.modify (updateTab n (_{ title = value }))
+        H.modify_ (updateTab n (_{ title = value }))
 
       OnCheck n value k -> k <$ do
-        H.modify (updateTab n (_{ chosen = value }))
+        H.modify_ (updateTab n (_{ chosen = value }))
 
       OnReadLater value k -> k <$ do
-        H.modify (_{ readLater = value })
+        H.modify_ (_{ readLater = value })
 
       OnPrivate value k -> k <$ do
-        H.modify (_{ private = value })
+        H.modify_ (_{ private = value })
 
       OnReplace value k -> k <$ do
-        H.modify (_{ replace = value })
+        H.modify_ (_{ replace = value })
 
       FromTagInput tags k -> k <$ do
         toText <- H.gets _.config.tags.textValue
-        H.modify (_{ tags = map toText tags })
+        H.modify_ (_{ tags = map toText tags })
 
       Save e k -> k <$ do
         noBubble e
@@ -260,7 +257,7 @@ component =
 
         forWithIndex s.tabs \n tab ->
           when (tab.chosen && tab.status == Idle) $ unit <$ H.fork do
-            H.modify (updateTab n (_{ status = Waiting }))
+            H.modify_ (updateTab n (_{ status = Waiting }))
 
             -- NOTE: There doesn't seem to be much benefit in running
             -- these requests in parallel; otherwise H.fork could be used
@@ -272,14 +269,14 @@ component =
                           # postsAdd s.config.authToken tab.url tab.title
 
             case res of
-              Right _  -> H.modify (updateTab n (_{ status = Success }))
+              Right _  -> H.modify_ (updateTab n (_{ status = Success }))
               Left err ->
                 let x = case err of
                           JsonError msg -> "JSON: "  <> msg
                           UserError msg -> "Server: " <> msg
                           HttpError 401 -> "Incorrect API token"
                           HttpError code -> "HTTP " <> show code
-                 in H.modify (updateTab n (_{ status = Error x }))
+                 in H.modify_ (updateTab n (_{ status = Error x }))
 
 
 updateTab :: forall m. Int -> (Tab -> Tab) -> State m -> State m
@@ -298,8 +295,8 @@ enableSave s =
     paused _         = false
 
 noBubble
-  :: forall e m
-   . MonadAff (dom :: DOM | e) m
+  :: forall m
+   . MonadAff m
   => MouseEvent
   -> DSL m Unit
-noBubble = H.liftEff <<< preventDefault <<< mouseEventToEvent
+noBubble = H.liftEffect <<< preventDefault <<< toEvent

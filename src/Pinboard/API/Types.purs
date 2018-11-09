@@ -18,8 +18,9 @@ module Pinboard.API.Types
   , Suggestions
   ) where
 
-import Data.Maybe     (Maybe(..))
-import Data.DateTime  (DateTime)
+import Data.Maybe             (Maybe(..))
+import Data.DateTime          (DateTime)
+import Affjax.ResponseFormat  (ResponseFormatError)
 
 -------------------------------------------------------------------------------
 

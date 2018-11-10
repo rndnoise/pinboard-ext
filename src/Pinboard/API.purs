@@ -1,6 +1,7 @@
 module Pinboard.API
   ( AuthToken
   , authToken
+  , userName
   , notesGet
   , notesList
   , postsAdd
@@ -29,6 +30,8 @@ import Data.Maybe                     (Maybe(..))
 import Foreign.Object                 (toArrayWithKey)
 import Data.Traversable               (traverse, sequence)
 import Data.Tuple                     (Tuple(..), fst)
+import Data.String.CodeUnits          (indexOf, slice)
+import Data.String.Pattern            (Pattern(..))
 import Global                         (readFloat)
 import Affjax                         (Request, defaultRequest)
 import Affjax.StatusCode              (StatusCode(..))
@@ -79,6 +82,11 @@ newtype AuthToken = AuthToken String
 
 authToken :: String -> AuthToken
 authToken = AuthToken
+
+userName :: AuthToken -> Maybe String
+userName (AuthToken x) = case indexOf (Pattern ":") x of
+  Just n  -> ("u:" <> _) <$> slice 0 n x
+  _       -> Nothing
 
 instance showAuthToken :: Show AuthToken where
   show (AuthToken x) = x

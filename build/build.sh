@@ -6,6 +6,7 @@ OUT=build/srcs
 bower install
 
 mkdir -p $OUT
+mkdir -p $OUT/blue
 rm -f $OUT/*.css
 rm -f $OUT/*html
 rm -f $OUT/*svg
@@ -19,4 +20,8 @@ cp resources/manifest.json $OUT
 
 if [ ! -e $OUT/popup.js ] || [ $(find src -newer $OUT/popup.js -name '*.purs' | wc -l) -gt 0 ]; then
   pulp build --jobs 2 -O --main Pinboard.UI.Popup --to $OUT/popup.js #2>/dev/null
+fi
+
+if [ ! -e $OUT/omnibox.js ] || [ $(find src -newer $OUT/omnibox.js -name '*.purs' | wc -l) -gt 0 ]; then
+  pulp build --jobs 2 -O --main Pinboard.Background --to $OUT/omnibox.js #2>/dev/null
 fi

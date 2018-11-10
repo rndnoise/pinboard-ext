@@ -11,6 +11,12 @@
     "128": "blue/128.png",
     "256": "blue/256.png"
   },
+  "omnibox": {
+    "keyword": "pin"
+  },
+  "background": {
+    "scripts": ["omnibox.js"]
+  },
   "browser_action": {
     "browser_style": true,
     "default_title": "Pinboard",

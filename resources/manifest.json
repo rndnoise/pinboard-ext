@@ -1,6 +1,6 @@
 {
   "name": "Pinboard",
-  "version": "1.10",
+  "version": "1.11",
   "description": "Browser extension for bookmarking pages on Pinboard (pinboard.in)",
   "homepage_url": "https://randomnoi.se/pinboard",
   "icons": {
@@ -15,7 +15,9 @@
     "keyword": "pin"
   },
   "background": {
-    "scripts": ["omnibox.js"]
+    "scripts": [
+      "omnibox.js"
+    ]
   },
   "browser_action": {
     "browser_style": true,

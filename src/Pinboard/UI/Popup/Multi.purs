@@ -12,13 +12,14 @@ import Prelude
 import WebExtensions.Tabs.Tab         as CT
 import Effect.Aff.Class               (class MonadAff)
 import Effect.Aff.Jax.Class           (class MonadJax)
+import Global.Unsafe                  (unsafeDecodeURIComponent)
 import Web.Event.Event                (preventDefault)
 import Web.UIEvent.MouseEvent         (MouseEvent, toEvent)
 import Data.Array                     (all, any, mapWithIndex, modifyAt)
 import Data.Either                    (Either(..))
 import Data.Filterable                (filterMap, maybeBool)
 import Data.Maybe                     (Maybe(..))
-import Data.String                    (Pattern(..), indexOf)
+import Data.String                    (Pattern(..), indexOf, stripPrefix)
 import Data.TraversableWithIndex      (forWithIndex)
 import Data.Tuple                     (Tuple(..))
 import Halogen                        as H
@@ -80,6 +81,12 @@ derive instance ordSlot :: Ord Slot
 
 -------------------------------------------------------------------------------
 
+rewriteUrl :: String -> String
+rewriteUrl url =
+  case stripPrefix (Pattern "about:reader?url=") url of
+    Just u  -> unsafeDecodeURIComponent u
+    Nothing -> url
+
 component
   :: forall m
    . MonadAff m
@@ -103,7 +110,7 @@ component =
       , config }
       where
         op t = { url: _, title: _, favIcon: _, chosen: _, status: Idle }
-               <$> (maybeBool ok =<< CT.url t)
+               <$> (maybeBool ok =<< rewriteUrl <$> CT.url t)
                <*> CT.title t
                <*> pure (CT.favIconUrl t)
                <*> pure true

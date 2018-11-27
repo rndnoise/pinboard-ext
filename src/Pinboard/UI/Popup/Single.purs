@@ -12,14 +12,16 @@ import WebExtensions.Tabs.Tab         (Tab, title, url) as CT
 -- ort Control.Comonad                (extract)
 import Effect.Aff.Class               (class MonadAff)
 import Effect.Aff.Jax.Class           (class MonadJax)
+import Global.Unsafe                  (unsafeDecodeURIComponent)
 import Web.Event.Event                (Event, preventDefault)
 import Web.UIEvent.MouseEvent         (toEvent)
 import Data.Array                     (uncons)
 import Data.DateTime                  (DateTime)
 import Data.Either                    (Either(..), either)
 import Data.Formatter.DateTime        (formatDateTime)
-import Data.Maybe                     (Maybe(..), fromMaybe, isJust, isNothing)
+import Data.Maybe                     (Maybe(..), fromMaybe, isJust, isNothing, maybe)
 import Data.Monoid                    (guard)
+import Data.String                    (Pattern(..), stripPrefix)
 import Data.Tuple                     (Tuple(..))
 import Halogen                        as H
 import Halogen.HTML                   as HH
@@ -82,6 +84,12 @@ type DSL m  = H.ParentDSL (State m) (Query m) (TI.Query Tag m) Slot Output m
 
 -------------------------------------------------------------------------------
 
+rewriteUrl :: String -> String
+rewriteUrl url =
+  case stripPrefix (Pattern "about:reader?url=") url of
+    Just u  -> unsafeDecodeURIComponent u
+    Nothing -> url
+
 component
   :: forall m
    . MonadAff m
@@ -98,8 +106,8 @@ component =
   where
     initialState :: Input m -> State m
     initialState (Tuple config tab) =
-      { title:      fromMaybe "" (CT.title =<< tab)
-      , url:        fromMaybe "" (CT.url   =<< tab)
+      { title:      fromMaybe "" (CT.title      =<< tab)
+      , url:        maybe "" rewriteUrl (CT.url =<< tab)
       , desc:       ""
       , tags:       []
       , readLater:  config.defaults.readLater

@@ -127,7 +127,6 @@ postsAdd auth url description options =
     decode r = do
       validateStatus r.status
       validateCode "result_code" =<< decodeJson r.body
-
     query =
       toQuery
       [ Tuple "url" url
